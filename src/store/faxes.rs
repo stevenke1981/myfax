@@ -17,9 +17,9 @@ pub(super) fn insert_fax(conn: &Connection, new: &NewFax) -> StoreResult<FaxId> 
     let file_size = to_db_int(new.file_size, "file_size")?;
     let sender_name = new.sender_name.as_deref().and_then(non_blank);
     conn.execute(
-        "INSERT INTO faxes (received_at, received_date, sender_number, sender_name, pages, \
+        "INSERT INTO faxes (received_at, received_ts, received_date, sender_number, sender_name, pages, \
          file_path, file_size, sha256, original_name, source, imported_at) \
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+         VALUES (?1, ?12, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
         params![
             received_at,
             received_date,
@@ -32,6 +32,7 @@ pub(super) fn insert_fax(conn: &Connection, new: &NewFax) -> StoreResult<FaxId> 
             new.original_name,
             new.source.as_db(),
             format_ts(&Local::now()),
+            new.received_at.timestamp(),
         ],
     )?;
     Ok(conn.last_insert_rowid())

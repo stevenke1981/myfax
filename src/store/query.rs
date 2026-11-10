@@ -71,11 +71,11 @@ fn folder_clause(folder: Folder) -> &'static str {
 
 fn order_clause(sort: SortOrder) -> &'static str {
     match sort {
-        SortOrder::NewestFirst => "received_at DESC, id DESC",
-        SortOrder::OldestFirst => "received_at ASC, id ASC",
+        SortOrder::NewestFirst => "received_ts DESC, id DESC",
+        SortOrder::OldestFirst => "received_ts ASC, id ASC",
         SortOrder::SenderAsc => {
             "COALESCE(NULLIF(sender_name, ''), sender_number, '') COLLATE NOCASE ASC, \
-             received_at DESC, id DESC"
+             received_ts DESC, id DESC"
         }
     }
 }

@@ -82,7 +82,7 @@ fn schema_declares_expected_indexes() {
     let store = Store::open_in_memory().expect("open");
     for index in [
         "idx_faxes_received_date",
-        "idx_faxes_sha256",
+        "idx_faxes_received_ts",
         "idx_faxes_sender_number",
         "idx_faxes_deleted_at",
     ] {

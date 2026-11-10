@@ -16,6 +16,7 @@ const SCHEMA_V1: &str = "
 CREATE TABLE faxes (
     id              INTEGER PRIMARY KEY,
     received_at     TEXT NOT NULL,
+    received_ts     INTEGER NOT NULL,
     received_date   TEXT NOT NULL,
     sender_number   TEXT,
     sender_name     TEXT,
@@ -60,7 +61,7 @@ CREATE TABLE activity_log (
     message     TEXT NOT NULL
 );
 CREATE INDEX idx_faxes_received_date ON faxes(received_date);
-CREATE INDEX idx_faxes_sha256 ON faxes(sha256);
+CREATE INDEX idx_faxes_received_ts ON faxes(received_ts);
 CREATE INDEX idx_faxes_sender_number ON faxes(sender_number);
 CREATE INDEX idx_faxes_deleted_at ON faxes(deleted_at);
 CREATE INDEX idx_fax_tags_tag ON fax_tags(tag);

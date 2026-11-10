@@ -36,12 +36,12 @@ pub fn write_contacts(contacts: &[Contact]) -> String {
         push_row(
             &mut out,
             [
-                contact.name.as_str(),
-                contact.company.as_str(),
+                guard_formula(&contact.name).as_ref(),
+                guard_formula(&contact.company).as_ref(),
                 contact.fax_number.as_str(),
                 contact.phone.as_str(),
-                contact.email.as_str(),
-                contact.note.as_str(),
+                guard_formula(&contact.email).as_ref(),
+                guard_formula(&contact.note).as_ref(),
             ],
         );
     }
@@ -93,7 +93,7 @@ impl Columns {
         let field = |index: Option<usize>| {
             index
                 .and_then(|i| record.get(i))
-                .map(|value| value.trim().to_string())
+                .map(|value| unguard_formula(value.trim()).to_string())
                 .unwrap_or_default()
         };
         Contact {
@@ -150,6 +150,25 @@ fn parse_records(text: &str) -> anyhow::Result<Vec<Vec<String>>> {
     Ok(records)
 }
 
+/// Spreadsheet formula-injection guard for free-text cells: a value starting
+/// with `=`, `+`, `-` or `@` is written with a leading `'` (Excel shows it as
+/// text). Number columns (fax, phone) are not guarded because `+886…` is valid.
+fn guard_formula(value: &str) -> Cow<'_, str> {
+    if value.starts_with(['=', '+', '-', '@']) {
+        Cow::Owned(format!("'{value}"))
+    } else {
+        Cow::Borrowed(value)
+    }
+}
+
+/// Reverse of [`guard_formula`] on import.
+fn unguard_formula(value: &str) -> &str {
+    match value.strip_prefix('\'') {
+        Some(rest) if rest.starts_with(['=', '+', '-', '@']) => rest,
+        _ => value,
+    }
+}
+
 fn push_row<'a>(out: &mut String, fields: impl IntoIterator<Item = &'a str>) {
     let mut first = true;
     for field in fields {
@@ -200,6 +219,23 @@ mod tests {
         let text = write_contacts(std::slice::from_ref(&original));
         let parsed = parse_contacts(&text).expect("roundtrip parses");
         assert_eq!(parsed, vec![original]);
+    }
+
+    #[test]
+    fn formula_cells_are_guarded_and_roundtrip() {
+        let original = Contact {
+            id: 0,
+            name: "=HYPERLINK(\"x\")".into(),
+            company: "@corp".into(),
+            fax_number: "+886221234567".into(),
+            phone: "+886 2".into(),
+            email: String::new(),
+            note: "-note".into(),
+        };
+        let text = write_contacts(std::slice::from_ref(&original));
+        assert!(text.contains("\"'=HYPERLINK(\"\"x\"\")\""));
+        assert!(text.contains(",'@corp,+886221234567,+886 2,,'-note"));
+        assert_eq!(parse_contacts(&text).unwrap(), vec![original]);
     }
 
     #[test]
