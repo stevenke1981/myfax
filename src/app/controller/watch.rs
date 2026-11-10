@@ -103,25 +103,17 @@ impl Controller {
         true
     }
 
-    /// Log a newly archived fax and auto-print it when enabled.
+    /// Auto-print a newly archived fax when enabled.
     fn on_watch_imported(&mut self, id: FaxId) {
         let lang = self.state.lang;
         let Some(record) = self.load_fax(id) else {
             return;
         };
-        let name = self.fax_name(&record);
-        let pages = record.pages.to_string();
-        self.log(
-            LogLevel::Info,
-            &tf(
-                lang,
-                "app.log_new_fax",
-                &[("name", &name), ("pages", &pages)],
-            ),
-        );
+        // The archive module already logged the import itself.
         if !self.state.settings.auto_print {
             return;
         }
+        let name = self.fax_name(&record);
         match self.platform.print_file(&record.file_path) {
             Ok(()) => self.log(
                 LogLevel::Info,

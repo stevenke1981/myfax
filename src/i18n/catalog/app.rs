@@ -292,11 +292,6 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     // ── activity log lines ──
     ("app.log_started", "MyFax 已啟動", "MyFax started"),
     (
-        "app.log_new_fax",
-        "收到新傳真：{name}（{pages} 頁）",
-        "New fax received: {name} ({pages} pg)",
-    ),
-    (
         "app.log_import_duplicate",
         "略過重複的傳真：{name}",
         "Skipped duplicate fax: {name}",
