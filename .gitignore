@@ -1,0 +1,5 @@
+.sites-runtime/
+/target/
+*.db
+*.db-journal
+result_*.md

@@ -1,0 +1,59 @@
+[package]
+name = "myfax"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88"
+license = "MIT OR Apache-2.0"
+description = "Native Rust fax inbox: receives faxes forwarded by Epson (and other) printers, archives PDFs by date, search, viewer, contacts and printing. Built with AcmeUI-Native."
+repository = "https://github.com/stevenke1981/myfax"
+readme = "README.md"
+publish = false
+
+[lib]
+name = "myfax"
+path = "src/lib.rs"
+
+[[bin]]
+name = "myfax"
+path = "src/main.rs"
+
+[dependencies]
+# AcmeUI-Native — pinned revision (do not move without an explicit upgrade task).
+acme-core = { git = "https://github.com/stevenke1981/AcmeUI-Native.git", rev = "1f23c910f05d7c975094df1e3b2be65ee2437ec9" }
+acme-layout = { git = "https://github.com/stevenke1981/AcmeUI-Native.git", rev = "1f23c910f05d7c975094df1e3b2be65ee2437ec9" }
+acme-platform = { git = "https://github.com/stevenke1981/AcmeUI-Native.git", rev = "1f23c910f05d7c975094df1e3b2be65ee2437ec9" }
+acme-render-wgpu = { git = "https://github.com/stevenke1981/AcmeUI-Native.git", rev = "1f23c910f05d7c975094df1e3b2be65ee2437ec9" }
+acme-text = { git = "https://github.com/stevenke1981/AcmeUI-Native.git", rev = "1f23c910f05d7c975094df1e3b2be65ee2437ec9" }
+acme-theme = { git = "https://github.com/stevenke1981/AcmeUI-Native.git", rev = "1f23c910f05d7c975094df1e3b2be65ee2437ec9" }
+acme-widgets = { git = "https://github.com/stevenke1981/AcmeUI-Native.git", rev = "1f23c910f05d7c975094df1e3b2be65ee2437ec9" }
+acme-style = { git = "https://github.com/stevenke1981/AcmeUI-Native.git", rev = "1f23c910f05d7c975094df1e3b2be65ee2437ec9" }
+acme-textinput = { git = "https://github.com/stevenke1981/AcmeUI-Native.git", rev = "1f23c910f05d7c975094df1e3b2be65ee2437ec9" }
+
+anyhow = "1"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "std", "serde"] }
+sha2 = "0.10"
+rusqlite = { version = "0.32", features = ["bundled"] }
+lopdf = "0.34"
+image = { version = "0.25", default-features = false, features = ["jpeg", "png", "tiff"] }
+fax = "0.2"
+dirs = "5"
+rfd = "0.15"
+
+[dev-dependencies]
+tempfile = "3"
+
+[profile.dev]
+debug = 1
+
+[profile.dev.package."*"]
+opt-level = 1
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+strip = "symbols"
