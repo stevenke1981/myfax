@@ -58,9 +58,9 @@ pub(super) fn raw_to_rgba(layout: &RawLayout, data: &[u8]) -> Result<PageImage, 
         .chunks_exact(stride)
         .zip(rgba.chunks_exact_mut(out_stride))
     {
-        for (x, pixel) in out_row.chunks_exact_mut(4).enumerate() {
+        for (x, pixel) in out_row.as_chunks_mut::<4>().0.iter_mut().enumerate() {
             let [r, g, b] = sample_rgb(row, x, layout);
-            pixel.copy_from_slice(&[r, g, b, 255]);
+            *pixel = [r, g, b, 255];
         }
     }
     Ok(PageImage {
@@ -158,7 +158,13 @@ mod tests {
             invert: false,
         };
         let page = raw_to_rgba(&layout, &[0b1010_0000]).expect("decodes");
-        let reds: Vec<u8> = page.rgba.chunks_exact(4).map(|px| px[0]).collect();
+        let reds: Vec<u8> = page
+            .rgba
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .map(|px| px[0])
+            .collect();
         assert_eq!(reds, vec![255, 0, 255, 0]);
         assert_eq!(page.rgba[3], 255);
     }

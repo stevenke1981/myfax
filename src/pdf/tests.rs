@@ -19,7 +19,12 @@ fn temp_dir() -> tempfile::TempDir {
 
 /// Red channel of each pixel; for gray images this is the gray level.
 fn red_channel(page: &PageImage) -> Vec<u8> {
-    page.rgba.chunks_exact(4).map(|px| px[0]).collect()
+    page.rgba
+        .as_chunks::<4>()
+        .0
+        .iter()
+        .map(|px| px[0])
+        .collect()
 }
 
 fn render_gray(path: &Path, page: u32) -> PageImage {

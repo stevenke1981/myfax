@@ -327,7 +327,7 @@ fn decode_jpeg(
         image::load_from_memory_with_format(data, ImageFormat::Jpeg).map_err(unsupported)?;
     let mut page = raster::from_dynamic(decoded);
     if invert {
-        for pixel in page.rgba.chunks_exact_mut(4) {
+        for pixel in page.rgba.as_chunks_mut::<4>().0 {
             for channel in pixel.iter_mut().take(3) {
                 *channel = 255 - *channel;
             }
@@ -483,7 +483,7 @@ fn decode_inverted(document: &Document, dict: &Dictionary) -> Result<bool, Previ
     if !values.len().is_multiple_of(2) {
         return Err(unsupported("Decode array has an odd length"));
     }
-    let pairs = || values.chunks_exact(2);
+    let pairs = || values.as_chunks::<2>().0.iter();
     if pairs().all(|p| p[0] == 0.0 && p[1] == 1.0) {
         Ok(false)
     } else if pairs().all(|p| p[0] == 1.0 && p[1] == 0.0) {
