@@ -163,7 +163,11 @@ pub fn chip(value: &str, tone: Tone) -> WidgetNode<Msg> {
 
 /// Flexible empty space.
 pub fn spacer() -> WidgetNode<Msg> {
-    column::<Msg>().flex_1().build()
+    column::<Msg>()
+        .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
+        .build()
 }
 
 /// Fixed vertical gap of `h` px.
@@ -249,6 +253,8 @@ pub fn empty_state(
     }
     column::<Msg>()
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .child(spacer())
         .child(
             row::<Msg>()

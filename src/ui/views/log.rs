@@ -33,6 +33,8 @@ pub fn view(state: &AppState) -> WidgetNode<Msg> {
     column::<Msg>()
         .key("page.log")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .child(kit::page_header(
             t(lang, "log.title"),
             Some(subtitle),
@@ -47,6 +49,8 @@ fn list(state: &AppState) -> WidgetNode<Msg> {
     let mut rows = column::<Msg>()
         .key("scroll.log")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .overflow_scroll()
         .px(24.0)
         .py(8.0);
@@ -88,6 +92,7 @@ fn log_row(lang: Lang, entry: &LogEntry) -> WidgetNode<Msg> {
                 .font_size(14.0)
                 .wrap(LabelWrap::Word)
                 .flex_1()
+                .flex_shrink(1.0)
                 .build(),
         )
         .build()

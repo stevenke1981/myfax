@@ -37,16 +37,26 @@ pub fn view(state: &AppState) -> WidgetNode<Msg> {
     let body = row::<Msg>()
         .key("contactsbody")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .child(list_column(state))
         .child(kit::vdivider())
         .child(editor_column(state))
         .build();
-    column::<Msg>().flex_1().child(header).child(body).build()
+    column::<Msg>()
+        .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
+        .child(header)
+        .child(body)
+        .build()
 }
 
 fn list_column(state: &AppState) -> WidgetNode<Msg> {
     column::<Msg>()
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .min_w(px(LIST_MIN_W))
         .h(crate::ui::views::kit::full())
         .bg(ColorToken::Background)
@@ -71,6 +81,8 @@ fn contact_list(state: &AppState) -> WidgetNode<Msg> {
     let mut list = column::<Msg>()
         .key("scroll.contacts")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .overflow_scroll();
     if state.contacts.is_empty() {
         list = list.child(kit::empty_state(
@@ -117,6 +129,8 @@ fn contact_row(lang: Lang, contact: &Contact, selected: bool) -> WidgetNode<Msg>
     );
     let text_col = column::<Msg>()
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .px(12.0)
         .py(8.0)
         .gap(2.0)
@@ -197,6 +211,8 @@ fn editor(state: &AppState, id: ContactId) -> WidgetNode<Msg> {
     let fields = column::<Msg>()
         .key("scroll.contact_editor")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .overflow_scroll()
         .p(16.0)
         .gap(12.0)
@@ -229,6 +245,8 @@ fn editor(state: &AppState, id: ContactId) -> WidgetNode<Msg> {
         .build();
     column::<Msg>()
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .child(header)
         .child(kit::hdivider())
         .child(fields)
@@ -293,6 +311,7 @@ fn csv_block(state: &AppState) -> WidgetNode<Msg> {
         .child(
             text_input::<Msg>(Field::CsvPath.key())
                 .flex_1()
+                .flex_shrink(1.0)
                 .placeholder(t(lang, "contacts.csv_ph"))
                 .value(state.field(Field::CsvPath))
                 .build(),

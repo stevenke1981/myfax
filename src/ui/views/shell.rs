@@ -62,6 +62,8 @@ fn body(state: &AppState, page: WidgetNode<Msg>) -> WidgetNode<Msg> {
     row::<Msg>()
         .key("body")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .child(nav_rail(state))
         .child(kit::vdivider())
         .child(page_area(state, page))
@@ -72,12 +74,21 @@ fn page_area(state: &AppState, page: WidgetNode<Msg>) -> WidgetNode<Msg> {
     let mut area = column::<Msg>()
         .key("pagearea")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .h(crate::ui::views::kit::full());
     if state.new_fax_banner > 0 {
         area = area.child(banner(state));
     }
-    area.child(column::<Msg>().flex_1().child(page).build())
-        .build()
+    area.child(
+        column::<Msg>()
+            .flex_1()
+            .flex_shrink(1.0)
+            .min_h(crate::ui::views::kit::px(0.0))
+            .child(page)
+            .build(),
+    )
+    .build()
 }
 
 // ── nav rail (§2.1) ─────────────────────────────────────────────────────────
@@ -144,7 +155,8 @@ fn nav_item(state: &AppState, route: Route) -> WidgetNode<Msg> {
     let mut name_label = label_builder::<Msg>(name)
         .font_size(14.0)
         .text_color(text_color)
-        .flex_1();
+        .flex_1()
+        .flex_shrink(1.0);
     if active {
         name_label = name_label.font_weight(FontWeight::SemiBold);
     }
@@ -256,6 +268,7 @@ fn status_bar(state: &AppState, now: DateTime<Local>) -> WidgetNode<Msg> {
                 .font_size(12.0)
                 .text_muted()
                 .flex_1()
+                .flex_shrink(1.0)
                 .build(),
         )
         .child(
@@ -331,6 +344,7 @@ fn banner(state: &AppState) -> WidgetNode<Msg> {
                 .font_weight(FontWeight::SemiBold)
                 .text_color(ColorToken::Info)
                 .flex_1()
+                .flex_shrink(1.0)
                 .build(),
         );
     if state.route != Route::Inbox {
@@ -387,6 +401,7 @@ fn toast_layer(toast: &Toast) -> WidgetNode<Msg> {
                 .wrap(LabelWrap::Word)
                 .text_color(ColorToken::Foreground)
                 .flex_1()
+                .flex_shrink(1.0)
                 .build(),
         )
         .child(kit::colored(

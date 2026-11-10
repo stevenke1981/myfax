@@ -31,6 +31,8 @@ pub fn view(state: &AppState) -> WidgetNode<Msg> {
     let body = row::<Msg>()
         .key("sendbody")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .child(form_column(state))
         .child(kit::vdivider())
         .child(history_column(state))
@@ -38,6 +40,8 @@ pub fn view(state: &AppState) -> WidgetNode<Msg> {
     column::<Msg>()
         .key("page.send")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .child(header)
         .child(body)
         .build()
@@ -48,6 +52,8 @@ fn form_column(state: &AppState) -> WidgetNode<Msg> {
     column::<Msg>()
         .key("scroll.send_form")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .min_w(px(FORM_MIN_W))
         .overflow_scroll()
         .p(24.0)
@@ -128,7 +134,8 @@ fn printer_row(state: &AppState, index: usize, name: &str) -> WidgetNode<Msg> {
         .build();
     let mut name_label = label_builder::<Msg>(truncate_units(name, PRINTER_NAME_UNITS))
         .font_size(14.0)
-        .flex_1();
+        .flex_1()
+        .flex_shrink(1.0);
     if selected {
         name_label = name_label.text_color(ColorToken::AccentForeground);
     }
@@ -146,6 +153,7 @@ fn file_section(state: &AppState) -> WidgetNode<Msg> {
     let lang = state.lang;
     let input = text_input::<Msg>(Field::SendFile.key())
         .flex_1()
+        .flex_shrink(1.0)
         .placeholder(t(lang, "send.file_ph"))
         .value(state.field(Field::SendFile))
         .build();
@@ -214,6 +222,7 @@ fn pick_row(contact: &Contact) -> WidgetNode<Msg> {
             label_builder::<Msg>(truncate_units(&contact.name, 28))
                 .font_size(14.0)
                 .flex_1()
+                .flex_shrink(1.0)
                 .build(),
         )
         .child(kit::caption(&contact.fax_number))

@@ -56,13 +56,15 @@ pub fn pane(state: &AppState) -> WidgetNode<Msg> {
     let body = column::<Msg>()
         .key("scroll.detail")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .overflow_scroll()
         .p(PANE_PAD)
         .gap(12.0)
         .child(info_card(state, fax))
         .child(actions(state, fax))
-        .child(edit_card(state, fax))
         .child(preview_block(state, fax.id))
+        .child(edit_card(state, fax))
         .build();
     base.child(head).child(kit::hdivider()).child(body).build()
 }
@@ -81,6 +83,10 @@ fn kv(label_text: &str, value: &str, wrap: LabelWrap) -> WidgetNode<Msg> {
             text_builder(value, 14.0, false, ColorToken::Foreground)
                 .wrap(wrap)
                 .flex_1()
+                .flex_shrink(1.0)
+                // A text leaf's min-content width is its single-line width;
+                // allow shrinking so long names/paths wrap inside the card.
+                .min_w(kit::px(0.0))
                 .build(),
         )
         .build()
@@ -344,6 +350,8 @@ fn loading_card(lang: Lang) -> WidgetNode<Msg> {
         .child(
             column::<Msg>()
                 .flex_1()
+                .flex_shrink(1.0)
+                .min_h(crate::ui::views::kit::px(0.0))
                 .child(kit::spacer())
                 .child(text)
                 .child(kit::spacer())

@@ -29,6 +29,8 @@ pub fn view(state: &AppState) -> WidgetNode<Msg> {
     column::<Msg>()
         .key("page.settings")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .child(kit::page_header(
             t(state.lang, "settings.title"),
             None,
@@ -52,6 +54,8 @@ fn scroll_region(state: &AppState) -> WidgetNode<Msg> {
     column::<Msg>()
         .key("scroll.settings")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .overflow_scroll()
         .padding(24.0)
         .child(content)
@@ -158,6 +162,8 @@ fn watch_add_row(state: &AppState) -> WidgetNode<Msg> {
             input(state, Field::WatchFolderInput)
                 .placeholder(t(lang, "settings.watch_ph"))
                 .flex_1()
+                .flex_shrink(1.0)
+                .min_h(crate::ui::views::kit::px(0.0))
                 .build(),
         )
         .child(browse(
@@ -195,6 +201,8 @@ fn forward_field(state: &AppState) -> WidgetNode<Msg> {
             input(state, Field::ForwardFolder)
                 .placeholder(t(lang, "settings.forward_ph"))
                 .flex_1()
+                .flex_shrink(1.0)
+                .min_h(crate::ui::views::kit::px(0.0))
                 .build(),
         )
         .child(browse(
@@ -269,7 +277,13 @@ fn storage_card(state: &AppState) -> WidgetNode<Msg> {
     }
     let archive_line = row::<Msg>()
         .gap(8.0)
-        .child(archive.flex_1().build())
+        .child(
+            archive
+                .flex_1()
+                .flex_shrink(1.0)
+                .min_h(crate::ui::views::kit::px(0.0))
+                .build(),
+        )
         .child(browse(lang, "btn.browse.archive_root", Field::ArchiveRoot))
         .child(
             button("btn.open_archive", t(lang, "settings.open_archive"))
@@ -359,6 +373,7 @@ fn footer(state: &AppState) -> WidgetNode<Msg> {
             .text_muted()
             .wrap(LabelWrap::Word)
             .flex_1()
+            .flex_shrink(1.0)
             .build(),
     )
     .build()
@@ -381,7 +396,11 @@ fn browse(lang: Lang, key: &str, field: Field) -> WidgetNode<Msg> {
 
 /// Flexible single-line label (no wrap, fills the row).
 fn flex_label(text: &str) -> WidgetNode<Msg> {
-    label_builder::<Msg>(text).font_size(14.0).flex_1().build()
+    label_builder::<Msg>(text)
+        .font_size(14.0)
+        .flex_1()
+        .flex_shrink(1.0)
+        .build()
 }
 
 /// Labelled integer field with a caption hint and inline validation.

@@ -23,6 +23,8 @@ use acme_widgets::{
 pub fn view(state: &AppState) -> WidgetNode<Msg> {
     row::<Msg>()
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .h(crate::ui::views::kit::full())
         .child(filters::filter_column(state))
         .child(kit::vdivider())
@@ -123,6 +125,7 @@ fn bottom_block(state: &AppState) -> WidgetNode<Msg> {
             .placeholder(t(lang, "inbox.import_ph"))
             .value(state.field(Field::ImportPath))
             .flex_1()
+            .flex_shrink(1.0)
             .build(),
         button("btn.browse.import_path", t(lang, "common.browse_short"))
             .variant(ButtonVariant::Secondary)
@@ -139,6 +142,7 @@ fn bottom_block(state: &AppState) -> WidgetNode<Msg> {
             .placeholder(t(lang, "inbox.export_ph"))
             .value(state.field(Field::ExportFolder))
             .flex_1()
+            .flex_shrink(1.0)
             .build(),
         button("btn.browse.export_folder", t(lang, "common.browse_short"))
             .variant(ButtonVariant::Secondary)

@@ -38,6 +38,8 @@ pub(super) fn filter_column(state: &AppState) -> WidgetNode<Msg> {
     let body = column::<Msg>()
         .key("scroll.filters")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .overflow_scroll()
         .p(PANE_PAD)
         .gap(16.0)
@@ -93,6 +95,8 @@ fn folders_block(state: &AppState) -> WidgetNode<Msg> {
         let count = folder_count(&state.counts, folder).to_string();
         let content = row::<Msg>()
             .flex_1()
+            .flex_shrink(1.0)
+            .min_h(crate::ui::views::kit::px(0.0))
             .h(crate::ui::views::kit::full())
             .px(8.0)
             .gap(8.0)
@@ -252,6 +256,8 @@ fn year_block(state: &AppState, node: &YearNode) -> WidgetNode<Msg> {
         .on_click(Msg::ToggleYear(node.year));
     let content = row::<Msg>()
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .h(crate::ui::views::kit::full())
         .px(8.0)
         .gap(8.0)
@@ -267,6 +273,8 @@ fn year_block(state: &AppState, node: &YearNode) -> WidgetNode<Msg> {
         content,
     )
     .flex_1()
+    .flex_shrink(1.0)
+    .min_h(crate::ui::views::kit::px(0.0))
     .build();
     let head = row::<Msg>()
         .key(format!("tree.y.{}", node.year))
@@ -288,6 +296,8 @@ fn month_block(state: &AppState, year: i32, month: &MonthNode) -> WidgetNode<Msg
     let active = month_active(&state.query, year, month.month);
     let content = row::<Msg>()
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .h(crate::ui::views::kit::full())
         .pl(24.0)
         .pr(8.0)
@@ -316,6 +326,8 @@ fn day_row(state: &AppState, date: NaiveDate, count: u64) -> WidgetNode<Msg> {
     let active = day_active(&state.query, date);
     let content = row::<Msg>()
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .h(crate::ui::views::kit::full())
         .pl(44.0)
         .pr(8.0)

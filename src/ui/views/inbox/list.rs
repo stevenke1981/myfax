@@ -21,11 +21,15 @@ pub(super) fn list_column(state: &AppState) -> WidgetNode<Msg> {
     let scroll = column::<Msg>()
         .key("scroll.list")
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .overflow_scroll()
         .child(rows)
         .build();
     column::<Msg>()
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .min_w(kit::px(LIST_MIN_W))
         .h(crate::ui::views::kit::full())
         .bg(ColorToken::Background)
@@ -160,6 +164,7 @@ fn fax_row(state: &AppState, fax: &FaxRecord) -> WidgetNode<Msg> {
         .child(
             text_builder(&sender, 14.0, !fax.is_read, ink(active))
                 .flex_1()
+                .flex_shrink(1.0)
                 .build(),
         )
         .child(text_builder(&pages, 12.0, false, ink_muted(active)).build())
@@ -167,6 +172,8 @@ fn fax_row(state: &AppState, fax: &FaxRecord) -> WidgetNode<Msg> {
     let line_two = date_and_tags(state, fax, active);
     let content = column::<Msg>()
         .flex_1()
+        .flex_shrink(1.0)
+        .min_h(crate::ui::views::kit::px(0.0))
         .px(PANE_PAD)
         .py(8.0)
         .gap(2.0)
