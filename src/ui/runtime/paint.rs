@@ -1,5 +1,10 @@
-//! Tree walk: containers, hover overlays, modal spans, scroll viewports and
-//! image slots. Leaf widgets are painted by `widgets`.
+//! Tree walk: containers, hover and focus overlays, modal spans, two-axis scroll
+//! viewports and image slots. Leaf widgets are painted by `widgets`.
+//!
+//! A node whose painted extent (its own rect, or for containers the union of
+//! its subtree) cannot be seen through the current clip is neither painted nor
+//! shaped. Its bookkeeping (container ids, sequence numbers, scroll offsets,
+//! focus, modal spans) is still recorded so that frames stay consistent.
 
 use std::collections::{HashMap, HashSet};
 
@@ -10,17 +15,21 @@ use acme_text::{FontSystem, GlyphAtlas};
 use acme_theme::{Theme, ThemeColor};
 use acme_widgets::{Card, CardVariant, WidgetNode};
 
+use super::cache::TextCache;
 use super::edit::Focus;
 use super::geom::{
-    Ctx, Rect4, clamp_offset, color, finite_non_negative, intersect, is_finite_rect, quad, to_rect,
+    Ctx, FOCUS_RING_WIDTH, Offset2, Rect4, clamp_offset, color, finite_non_negative, intersect,
+    is_finite_rect, join, quad, to_rect, visible_in,
 };
-use super::hit::{FrameState, Region, ScrollRegion, Target};
+use super::hit::{FrameState, ModalSpan, Region, ScrollRegion, Target};
 
 const IMAGE_SLOT_PREFIX: &str = "img:";
 const MODAL_PREFIX: &str = "modal:";
 const SCROLLBAR_WIDTH: f32 = 4.0;
 const SCROLLBAR_INSET: f32 = 2.0;
 const SCROLLBAR_MIN_THUMB: f32 = 24.0;
+/// Overflow below this (layout rounding) does not make an axis scrollable.
+const OVERFLOW_SLACK: f32 = 0.5;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Axis {
@@ -32,14 +41,16 @@ pub(super) enum Axis {
 pub(super) struct Painter<'a, M> {
     pub fonts: &'a mut FontSystem,
     pub atlas: &'a mut GlyphAtlas,
+    pub text: &'a mut TextCache,
     pub theme: &'a Theme,
     pub scale: f32,
     pub images: &'a HashMap<String, Rgba8Image>,
     pub snapshot: &'a LayoutSnapshot,
-    pub scroll_offsets: &'a mut HashMap<String, f32>,
+    pub scroll_offsets: &'a mut HashMap<String, Offset2>,
     pub seen_scroll: HashSet<String>,
     pub focus: &'a mut Option<Focus>,
     pub focus_found: bool,
+    pub focus_visible: bool,
     pub hover: Option<Target>,
     pub pressed: Option<Target>,
     pub out: Scene,
@@ -78,6 +89,79 @@ impl BoxDefaults {
 
 fn key_str(key: &Option<WidgetKey>) -> Option<&str> {
     key.as_ref().map(WidgetKey::as_str)
+}
+
+fn group_of<M>(widget: &WidgetNode<M>) -> Option<Group<'_, M>> {
+    match widget {
+        WidgetNode::Row(container) => Some(Group {
+            key: key_str(&container.key),
+            style: &container.style,
+            message: container.message.as_ref(),
+            children: &container.children,
+            axis: Some(Axis::Row),
+            card: None,
+            padding: &container.padding,
+        }),
+        WidgetNode::Column(container) => Some(Group {
+            key: key_str(&container.key),
+            style: &container.style,
+            message: container.message.as_ref(),
+            children: &container.children,
+            axis: Some(Axis::Column),
+            card: None,
+            padding: &container.padding,
+        }),
+        WidgetNode::Stack(container) => Some(Group {
+            key: key_str(&container.key),
+            style: &container.style,
+            message: container.message.as_ref(),
+            children: &container.children,
+            axis: None,
+            card: None,
+            padding: &container.padding,
+        }),
+        WidgetNode::Card(card) => Some(Group {
+            key: key_str(&card.key),
+            style: &card.style,
+            message: None,
+            children: &card.children,
+            axis: None,
+            card: Some(card),
+            padding: &card.padding,
+        }),
+        _ => None,
+    }
+}
+
+/// Containers and wrappers whose painted extent includes their children.
+fn spans_children<M>(widget: &WidgetNode<M>) -> bool {
+    matches!(
+        widget,
+        WidgetNode::Row(_)
+            | WidgetNode::Column(_)
+            | WidgetNode::Stack(_)
+            | WidgetNode::Card(_)
+            | WidgetNode::Tooltip(_)
+            | WidgetNode::Popover(_)
+    )
+}
+
+/// Key of a `modal:` container.
+fn modal_key(key: Option<&str>) -> Option<&str> {
+    key.filter(|key| key.starts_with(MODAL_PREFIX))
+}
+
+/// A keyed clickable container that is not a modal can take keyboard focus.
+fn is_focusable<M>(group: &Group<'_, M>) -> bool {
+    group.message.is_some() && group.key.is_some() && modal_key(group.key).is_none()
+}
+
+/// Key of a scroll region: a keyed `Row`/`Column` with `overflow_scroll()`.
+fn scroll_key<'w, M>(group: &Group<'w, M>) -> Option<&'w str> {
+    match (group.axis, group.key, group.style.overflow) {
+        (Some(_), Some(key), Some(Overflow::Scroll)) => Some(key),
+        _ => None,
+    }
 }
 
 /// Background, shadow and border for a box, with `style` overriding `defaults`.
@@ -132,6 +216,18 @@ pub(super) fn push_box(
     ));
 }
 
+fn trailing_overflow(end: f32, viewport_end: f32, trailing: f32) -> f32 {
+    if !end.is_finite() {
+        return 0.0;
+    }
+    let overflow = end + finite_non_negative(trailing) - viewport_end;
+    if overflow > OVERFLOW_SLACK {
+        overflow
+    } else {
+        0.0
+    }
+}
+
 impl<M: Clone> Painter<'_, M> {
     /// Window-space rectangle of a laid-out node after scroll translation.
     pub(super) fn place(&self, layout: &LayoutNode, ctx: Ctx) -> Option<Rect4> {
@@ -157,60 +253,38 @@ impl<M: Clone> Painter<'_, M> {
         self.frame.regions.push(region);
     }
 
+    /// Bounding box of a node and all of its laid-out descendants.
+    fn subtree_bounds(&self, layout: &LayoutNode, ctx: Ctx) -> Option<Rect4> {
+        let own = self.place(layout, ctx);
+        layout
+            .children
+            .iter()
+            .fold(own, |acc, child| match self.subtree_bounds(child, ctx) {
+                Some(rect) => Some(join(acc, rect)),
+                None => acc,
+            })
+    }
+
+    /// Whether anything of `widget` can be seen through the current clip.
+    fn may_show(&self, widget: &WidgetNode<M>, layout: &LayoutNode, ctx: Ctx) -> bool {
+        let bounds = if spans_children(widget) {
+            self.subtree_bounds(layout, ctx)
+        } else {
+            self.place(layout, ctx)
+        };
+        bounds.is_some_and(|rect| visible_in(rect, ctx.clip))
+    }
+
     pub(super) fn paint(&mut self, widget: &WidgetNode<M>, layout: &LayoutNode, ctx: Ctx) {
+        if !self.may_show(widget, layout, ctx) {
+            self.skip(widget, layout);
+            return;
+        }
+        if let Some(group) = group_of(widget) {
+            self.paint_group(&group, layout, ctx);
+            return;
+        }
         match widget {
-            WidgetNode::Row(container) => self.paint_group(
-                &Group {
-                    key: key_str(&container.key),
-                    style: &container.style,
-                    message: container.message.as_ref(),
-                    children: &container.children,
-                    axis: Some(Axis::Row),
-                    card: None,
-                    padding: &container.padding,
-                },
-                layout,
-                ctx,
-            ),
-            WidgetNode::Column(container) => self.paint_group(
-                &Group {
-                    key: key_str(&container.key),
-                    style: &container.style,
-                    message: container.message.as_ref(),
-                    children: &container.children,
-                    axis: Some(Axis::Column),
-                    card: None,
-                    padding: &container.padding,
-                },
-                layout,
-                ctx,
-            ),
-            WidgetNode::Stack(container) => self.paint_group(
-                &Group {
-                    key: key_str(&container.key),
-                    style: &container.style,
-                    message: container.message.as_ref(),
-                    children: &container.children,
-                    axis: None,
-                    card: None,
-                    padding: &container.padding,
-                },
-                layout,
-                ctx,
-            ),
-            WidgetNode::Card(card) => self.paint_group(
-                &Group {
-                    key: key_str(&card.key),
-                    style: &card.style,
-                    message: None,
-                    children: &card.children,
-                    axis: None,
-                    card: Some(card),
-                    padding: &card.padding,
-                },
-                layout,
-                ctx,
-            ),
             WidgetNode::Label(label) => self.paint_label(label, layout, ctx),
             WidgetNode::Button(button) => self.paint_button(button, layout, ctx),
             WidgetNode::Separator(_) => self.paint_separator(layout, ctx),
@@ -222,6 +296,62 @@ impl<M: Clone> Painter<'_, M> {
                 }
             }
             _ => tracing::debug!("ui runtime: unsupported widget skipped"),
+        }
+    }
+
+    /// Records the bookkeeping of a node that cannot be seen, without painting,
+    /// shaping or emitting regions. Mirrors `paint` so ids and sequences match.
+    fn skip(&mut self, widget: &WidgetNode<M>, layout: &LayoutNode) {
+        if let Some(group) = group_of(widget) {
+            self.skip_group(&group, layout);
+            return;
+        }
+        match widget {
+            WidgetNode::Tooltip(tooltip) => self.skip(&tooltip.child, layout),
+            WidgetNode::Popover(popover) => {
+                if let Some(first) = popover.children.first() {
+                    self.skip(first, layout);
+                }
+            }
+            WidgetNode::Button(button) if !button.disabled => {
+                self.bump_seq();
+                if self.button_has_focus(button.key.as_str()) {
+                    self.focus_found = true;
+                }
+            }
+            WidgetNode::TextInput(input) if !input.disabled => {
+                self.bump_seq();
+                if self.input_has_focus(input.key.as_str()) {
+                    self.focus_found = true;
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn skip_group(&mut self, group: &Group<'_, M>, layout: &LayoutNode) {
+        let modal = modal_key(group.key);
+        let clickable = group.message.is_some() || modal.is_some();
+        let focusable = is_focusable(group);
+        if clickable {
+            self.claim_container(group.key, focusable);
+        }
+        if focusable && group.key.is_some_and(|key| self.container_has_focus(key)) {
+            self.focus_found = true;
+        }
+        let span_start = self.seq;
+        if clickable {
+            self.bump_seq();
+        }
+        if let Some(key) = scroll_key(group) {
+            self.seen_scroll.insert(key.to_owned());
+            self.bump_seq();
+        }
+        for (child, child_layout) in group.children.iter().zip(layout.children.iter()) {
+            self.skip(child, child_layout);
+        }
+        if let Some(key) = modal {
+            self.close_modal(span_start, key);
         }
     }
 
@@ -241,65 +371,103 @@ impl<M: Clone> Painter<'_, M> {
         }
     }
 
+    /// Whether the button with `key` holds keyboard focus.
+    pub(super) fn button_has_focus(&self, key: &str) -> bool {
+        matches!(self.focus.as_ref(), Some(Focus::Button { key: k }) if k.as_str() == key)
+    }
+
+    /// Whether the text input with `key` holds focus.
+    pub(super) fn input_has_focus(&self, key: &str) -> bool {
+        matches!(self.focus.as_ref(), Some(Focus::Input { key: k, .. }) if k.as_str() == key)
+    }
+
+    fn container_has_focus(&self, key: &str) -> bool {
+        matches!(self.focus.as_ref(), Some(Focus::Container { key: k }) if k.as_str() == key)
+    }
+
     fn paint_group(&mut self, group: &Group<'_, M>, layout: &LayoutNode, ctx: Ctx) {
         let Some(rect) = self.place(layout, ctx) else {
             return;
         };
         let defaults = self.card_defaults(group.card);
         push_box(&mut self.out, rect, group.style, defaults, self.theme);
-        let modal = group.key.is_some_and(|key| key.starts_with(MODAL_PREFIX));
-        let clickable = group.message.is_some() || modal;
-        let container = clickable.then(|| self.alloc_container());
-        if let (Some(index), Some(_)) = (container, group.message) {
-            let radius = group.style.border_radius.unwrap_or(defaults.radius);
-            self.paint_container_hover(index, rect, radius);
+        let modal = modal_key(group.key);
+        let clickable = group.message.is_some() || modal.is_some();
+        let focusable = is_focusable(group);
+        let radius = group.style.border_radius.unwrap_or(defaults.radius);
+        let target = clickable.then(|| self.claim_container(group.key, focusable));
+        let focused = focusable && group.key.is_some_and(|key| self.container_has_focus(key));
+        if let (Some(target), Some(_)) = (&target, group.message) {
+            self.paint_container_hover(target, rect, radius);
         }
         self.paint_image_slot(group.key, rect);
         let span_start = self.seq;
-        if let Some(index) = container {
+        if let Some(target) = &target {
             self.push_region(Region {
-                target: Target::Container(index),
+                target: target.clone(),
                 rect,
                 clip: ctx.clip,
                 message: group.message.cloned(),
                 input: None,
-                blocks: modal,
+                blocks: modal.is_some(),
                 seq: 0,
             });
         }
-        match (group.axis, group.key, group.style.overflow) {
-            (Some(axis), Some(key), Some(Overflow::Scroll)) => {
-                self.paint_scroll(group, key, axis, layout, rect, ctx);
-            }
-            _ => self.paint_children(group.children, layout, ctx),
+        match scroll_key(group) {
+            Some(key) => self.paint_scroll(group, key, layout, rect, ctx),
+            None => self.paint_children(group.children, layout, ctx),
         }
-        if modal {
-            self.close_modal(span_start);
+        if focused {
+            self.focus_found = true;
+            if self.focus_visible {
+                self.out.push(quad(
+                    rect,
+                    Color::TRANSPARENT,
+                    radius,
+                    FOCUS_RING_WIDTH,
+                    color(self.theme.colors.ring),
+                ));
+            }
+        }
+        if let Some(key) = modal {
+            self.close_modal(span_start, key);
         }
     }
 
     /// Records the paint span of a `modal:` container. The last-started modal
-    /// restricts Tab focus.
-    fn close_modal(&mut self, start: usize) {
+    /// restricts Tab focus and receives keyboard input.
+    fn close_modal(&mut self, start: usize, key: &str) {
         let end = self.seq;
-        if self.frame.modal.is_none_or(|(known, _)| start > known) {
-            self.frame.modal = Some((start, end));
+        if self
+            .frame
+            .modal
+            .as_ref()
+            .is_none_or(|known| start > known.start)
+        {
+            self.frame.modal = Some(ModalSpan {
+                start,
+                end,
+                key: key.to_owned(),
+            });
         }
     }
 
-    fn alloc_container(&mut self) -> usize {
+    /// Allocates the next container id. A keyed focusable container is
+    /// identified by its key; every other container by its paint-order index.
+    fn claim_container(&mut self, key: Option<&str>, focusable: bool) -> Target {
         let index = self.container_seq;
         self.container_seq += 1;
-        index
+        match key {
+            Some(key) if focusable => Target::Keyed(key.to_owned()),
+            _ => Target::Container(index),
+        }
     }
 
-    fn paint_container_hover(&mut self, index: usize, rect: Rect4, radius: f32) {
-        let hovered = matches!(&self.hover, Some(Target::Container(i)) if *i == index);
-        if !hovered {
+    fn paint_container_hover(&mut self, target: &Target, rect: Rect4, radius: f32) {
+        if self.hover.as_ref() != Some(target) {
             return;
         }
-        let pressed = matches!(&self.pressed, Some(Target::Container(i)) if *i == index);
-        let fill = if pressed {
+        let fill = if self.pressed.as_ref() == Some(target) {
             self.theme.colors.ghost_pressed
         } else {
             self.theme.colors.ghost_hover
@@ -331,75 +499,59 @@ impl<M: Clone> Painter<'_, M> {
         &mut self,
         group: &Group<'_, M>,
         key: &str,
-        axis: Axis,
         layout: &LayoutNode,
         rect: Rect4,
         ctx: Ctx,
     ) {
-        let horizontal = axis == Axis::Row;
         let base = [rect[0] + ctx.dx, rect[1] + ctx.dy, rect[2], rect[3]];
-        let max = self.overflow_extent(layout, base, horizontal, group.padding);
-        let stored = self.scroll_offsets.get(key).copied().unwrap_or(0.0);
-        let offset = clamp_offset(stored, max);
+        let max = self.overflow_extent(layout, base, group.padding);
+        let stored = self.scroll_offsets.get(key).copied().unwrap_or_default();
+        let offset = Offset2 {
+            x: clamp_offset(stored.x, max.x),
+            y: clamp_offset(stored.y, max.y),
+        };
         self.scroll_offsets.insert(key.to_owned(), offset);
         self.seen_scroll.insert(key.to_owned());
         let seq = self.bump_seq();
         self.frame.scroll.push(ScrollRegion {
             key: key.to_owned(),
-            horizontal,
             viewport: rect,
             clip: ctx.clip,
             max,
             seq,
         });
-        let (dx, dy) = if horizontal {
-            (ctx.dx + offset, ctx.dy)
-        } else {
-            (ctx.dx, ctx.dy + offset)
-        };
         let child_ctx = Ctx {
-            dx,
-            dy,
+            dx: ctx.dx + offset.x,
+            dy: ctx.dy + offset.y,
             clip: Some(intersect(ctx.clip, rect)),
         };
         self.out.push(DrawCommand::PushClip(to_rect(rect)));
         self.paint_children(group.children, layout, child_ctx);
         self.out.push(DrawCommand::PopClip);
-        self.paint_scrollbar(rect, horizontal, offset, max);
+        self.paint_scrollbar(rect, true, offset.x, max.x);
+        self.paint_scrollbar(rect, false, offset.y, max.y);
     }
 
-    /// Distance the content extends past the viewport's trailing edge (plus
-    /// the trailing padding), in snapshot space.
-    fn overflow_extent(
-        &self,
-        layout: &LayoutNode,
-        base: Rect4,
-        horizontal: bool,
-        padding: &Edges,
-    ) -> f32 {
-        let mut end = f32::NEG_INFINITY;
+    /// Distance each axis's content extends past the viewport's trailing edge
+    /// (plus the trailing padding), in snapshot space.
+    fn overflow_extent(&self, layout: &LayoutNode, base: Rect4, padding: &Edges) -> Offset2 {
+        let (mut end_x, mut end_y) = (f32::NEG_INFINITY, f32::NEG_INFINITY);
         for child in &layout.children {
-            let Some(child_rect) = self.snapshot.get(child.id) else {
+            let Some(rect) = self.snapshot.get(child.id) else {
                 continue;
             };
-            let edge = if horizontal {
-                child_rect.x + child_rect.width
-            } else {
-                child_rect.y + child_rect.height
-            };
-            if edge.is_finite() {
-                end = end.max(edge);
+            let (right, bottom) = (rect.x + rect.width, rect.y + rect.height);
+            if right.is_finite() {
+                end_x = end_x.max(right);
+            }
+            if bottom.is_finite() {
+                end_y = end_y.max(bottom);
             }
         }
-        if !end.is_finite() {
-            return 0.0;
+        Offset2 {
+            x: trailing_overflow(end_x, base[0] + base[2], padding.right),
+            y: trailing_overflow(end_y, base[1] + base[3], padding.bottom),
         }
-        let (viewport_end, trailing) = if horizontal {
-            (base[0] + base[2], padding.right)
-        } else {
-            (base[1] + base[3], padding.bottom)
-        };
-        (end + finite_non_negative(trailing) - viewport_end).max(0.0)
     }
 
     fn paint_scrollbar(&mut self, rect: Rect4, horizontal: bool, offset: f32, max: f32) {

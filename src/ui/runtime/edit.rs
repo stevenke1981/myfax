@@ -9,10 +9,10 @@ use acme_textinput::{
     TextInputState, byte_offset_to_x, handle_key, handle_keyboard_shortcut, handle_text,
 };
 
-use super::hit::{Target, hit_index};
+use super::hit::{ModalSpan, Target, hit_index};
 use super::{Modifiers, UiEvent, UiRuntime};
 
-/// The focused widget. Only one input can hold an edit buffer at a time.
+/// The focused widget. Only one widget holds focus at a time.
 pub(super) enum Focus {
     /// Boxed so the enum stays small; the buffer is much larger than `Button`.
     Input {
@@ -20,6 +20,10 @@ pub(super) enum Focus {
         state: Box<TextInputState>,
     },
     Button {
+        key: String,
+    },
+    /// A keyed clickable container.
+    Container {
         key: String,
     },
 }
@@ -72,6 +76,32 @@ pub(super) fn adopt_value(state: &mut TextInputState, value: &str) {
     state.move_cursor_to_offset(cursor);
 }
 
+/// Replaces line breaks and tabs with one space each and drops other control
+/// characters. Single-line inputs must never receive them from paste or IME.
+pub(super) fn single_line(raw: &str) -> String {
+    let mut out = String::with_capacity(raw.len());
+    let mut chars = raw.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\r' => {
+                if chars.peek() == Some(&'\n') {
+                    chars.next();
+                }
+                out.push(' ');
+            }
+            '\n' | '\t' => out.push(' '),
+            c if c.is_control() => {}
+            c => out.push(c),
+        }
+    }
+    out
+}
+
+/// Inserts clipboard text into a single-line buffer at the cursor.
+pub(super) fn paste_into(state: &mut TextInputState, raw: &str) {
+    handle_text(state, &single_line(raw));
+}
+
 /// Char-index cursor for diagnostics; the runtime itself never stores one.
 #[cfg(test)]
 pub(super) fn char_cursor(state: &TextInputState) -> usize {
@@ -88,6 +118,12 @@ fn edit_outcome(state: &mut TextInputState, edit: impl FnOnce(&mut TextInputStat
         Outcome::Nothing
     } else {
         Outcome::Edited(state.text.clone())
+    }
+}
+
+fn paste_clipboard(state: &mut TextInputState, clipboard: Option<&Clipboard>) {
+    if let Some(text) = clipboard.and_then(|clip| clip.get_text().ok()) {
+        paste_into(state, &text);
     }
 }
 
@@ -112,6 +148,7 @@ fn input_outcome(
             handle_key(s, &key, true, None, mods.ctrl, mods.shift);
         }),
         _ if mods.ctrl && !mods.alt => match shortcut(text, mods.shift) {
+            Some("v") => edit_outcome(state, |s| paste_clipboard(s, clipboard)),
             Some(letter) => edit_outcome(state, move |s| {
                 handle_keyboard_shortcut(s, letter, clipboard);
             }),
@@ -200,6 +237,19 @@ pub(super) fn boundary_at(
     }
 }
 
+/// Tab order and focusability: buttons, text inputs and keyed containers.
+pub(super) fn is_focus_target(target: &Target) -> bool {
+    matches!(
+        target,
+        Target::Button(_) | Target::Input(_) | Target::Keyed(_)
+    )
+}
+
+/// Whether a region painted at `seq` lies inside the modal span.
+fn inside_modal(span: &ModalSpan, seq: usize) -> bool {
+    seq > span.start && seq < span.end
+}
+
 impl<M: Clone + 'static> UiRuntime<M> {
     /// Key press dispatch (releases are filtered by the caller).
     pub(super) fn dispatch_key(
@@ -208,26 +258,41 @@ impl<M: Clone + 'static> UiRuntime<M> {
         mods: Modifiers,
         text: Option<&str>,
     ) -> Vec<UiEvent<M>> {
-        if key == PlatformKey::Escape {
-            return self.escape();
+        match key {
+            PlatformKey::Escape => return self.escape(),
+            PlatformKey::Tab => {
+                self.cycle_focus(mods.shift);
+                self.focus_visible = true;
+                return Vec::new();
+            }
+            _ => {}
         }
-        if key == PlatformKey::Tab {
-            self.cycle_focus(mods.shift);
+        if !self.focus_in_modal() {
             return Vec::new();
         }
         if matches!(self.focus, Some(Focus::Input { .. })) {
             return self.input_key(key, mods, text);
         }
-        if matches!(self.focus, Some(Focus::Button { .. }))
-            && matches!(key, PlatformKey::Enter | PlatformKey::Space)
-        {
-            return self.activate_focused_button();
+        let activates = matches!(
+            self.focus,
+            Some(Focus::Button { .. } | Focus::Container { .. })
+        );
+        if activates && matches!(key, PlatformKey::Enter | PlatformKey::Space) {
+            return self.activate_focused();
+        }
+        if activates && is_arrow(key) {
+            self.focus_visible = true;
         }
         Vec::new()
     }
 
-    /// Escape cancels an IME composition first; otherwise it blurs and emits `Cancel`.
+    /// Escape cancels an IME composition first, then blurs a focused text input
+    /// (no `Cancel`). With no input focused it clears focus and emits `Cancel`.
     fn escape(&mut self) -> Vec<UiEvent<M>> {
+        if !matches!(self.focus, Some(Focus::Input { .. })) {
+            self.focus = None;
+            return vec![UiEvent::Cancel];
+        }
         if let Some(Focus::Input { state, .. }) = self.focus.as_mut()
             && !state.preedit.is_empty()
         {
@@ -235,7 +300,7 @@ impl<M: Clone + 'static> UiRuntime<M> {
             return Vec::new();
         }
         self.focus = None;
-        vec![UiEvent::Cancel]
+        Vec::new()
     }
 
     fn input_key(
@@ -266,14 +331,15 @@ impl<M: Clone + 'static> UiRuntime<M> {
         }
     }
 
-    fn activate_focused_button(&self) -> Vec<UiEvent<M>> {
-        let Some(Focus::Button { key }) = &self.focus else {
+    /// Enter/Space on the focused button or keyed container emits its message.
+    fn activate_focused(&self) -> Vec<UiEvent<M>> {
+        let Some(target) = self.focus_target() else {
             return Vec::new();
         };
         self.frame
             .regions
             .iter()
-            .find(|region| matches!(&region.target, Target::Button(k) if k == key))
+            .find(|region| region.target == target)
             .and_then(|region| region.message.clone())
             .map(UiEvent::Message)
             .into_iter()
@@ -284,22 +350,65 @@ impl<M: Clone + 'static> UiRuntime<M> {
         match &self.focus {
             Some(Focus::Input { key, .. }) => Some(Target::Input(key.clone())),
             Some(Focus::Button { key }) => Some(Target::Button(key.clone())),
+            Some(Focus::Container { key }) => Some(Target::Keyed(key.clone())),
             None => None,
         }
+    }
+
+    /// `false` only while a `modal:` container is open and the focused widget
+    /// lies outside it. Keyboard and IME input then has no effect.
+    pub(super) fn focus_in_modal(&self) -> bool {
+        let Some(span) = self.frame.modal.as_ref() else {
+            return true;
+        };
+        let Some(target) = self.focus_target() else {
+            return true;
+        };
+        self.frame
+            .regions
+            .iter()
+            .any(|region| region.target == target && inside_modal(span, region.seq))
+    }
+
+    /// Moves focus into the last modal when it first appears (or changes), or
+    /// clears focus when it has nothing focusable. Returns `true` when the
+    /// focus changed and the frame must be painted again.
+    pub(super) fn sync_modal_focus(&mut self) -> bool {
+        let key = self.frame.modal.as_ref().map(|span| span.key.clone());
+        if key == self.last_modal {
+            return false;
+        }
+        let appeared = key.is_some();
+        self.last_modal = key;
+        if !appeared {
+            return false;
+        }
+        match self.first_focusable_in_modal() {
+            Some(index) => self.focus_region(index),
+            None => self.focus = None,
+        }
+        self.focus_visible = false;
+        true
+    }
+
+    fn first_focusable_in_modal(&self) -> Option<usize> {
+        let span = self.frame.modal.as_ref()?;
+        self.frame
+            .regions
+            .iter()
+            .position(|region| is_focus_target(&region.target) && inside_modal(span, region.seq))
     }
 
     /// Tab order: focusable regions in paint order, restricted to the last
     /// `modal:` container's paint span while one is open.
     fn focus_order(&self) -> Vec<usize> {
-        let span = self.frame.modal;
+        let span = self.frame.modal.as_ref();
         self.frame
             .regions
             .iter()
             .enumerate()
-            .filter(|(_, region)| matches!(region.target, Target::Button(_) | Target::Input(_)))
-            .filter(|(_, region)| {
-                span.is_none_or(|(start, end)| region.seq > start && region.seq < end)
-            })
+            .filter(|(_, region)| is_focus_target(&region.target))
+            .filter(|(_, region)| span.is_none_or(|span| inside_modal(span, region.seq)))
             .map(|(index, _)| index)
             .collect()
     }
@@ -340,9 +449,18 @@ impl<M: Clone + 'static> UiRuntime<M> {
         if Some(&target) == current.as_ref() {
             return;
         }
-        match target {
+        self.focus_region(region_index);
+    }
+
+    /// Gives focus to the focusable region at `index`.
+    fn focus_region(&mut self, index: usize) {
+        let Some(region) = self.frame.regions.get(index) else {
+            return;
+        };
+        match region.target.clone() {
             Target::Button(key) => self.focus = Some(Focus::Button { key }),
-            Target::Input(_) => self.focus_input_region(region_index, None),
+            Target::Input(_) => self.focus_input_region(index, None),
+            Target::Keyed(key) => self.focus = Some(Focus::Container { key }),
             Target::Container(_) => {}
         }
     }
@@ -398,6 +516,7 @@ impl<M: Clone + 'static> UiRuntime<M> {
     }
 
     pub(super) fn pointer_down(&mut self, x: f32, y: f32) {
+        self.focus_visible = false;
         let target = hit_index(&self.frame.regions, x, y)
             .and_then(|index| self.frame.regions.get(index))
             .map(|region| region.target.clone());
@@ -423,6 +542,7 @@ impl<M: Clone + 'static> UiRuntime<M> {
         match region.target.clone() {
             Target::Button(key) => self.focus = Some(Focus::Button { key }),
             Target::Input(_) => self.focus_input_region(index, Some(x)),
+            Target::Keyed(key) => self.focus = Some(Focus::Container { key }),
             Target::Container(_) => self.focus = None,
         }
         message.map(UiEvent::Message).into_iter().collect()
@@ -430,6 +550,9 @@ impl<M: Clone + 'static> UiRuntime<M> {
 
     /// Returns `true` when the composition text changed.
     pub(super) fn ime_preedit_text(&mut self, text: &str) -> bool {
+        if !self.focus_in_modal() {
+            return false;
+        }
         let Some(Focus::Input { state, .. }) = self.focus.as_mut() else {
             return false;
         };
@@ -445,12 +568,16 @@ impl<M: Clone + 'static> UiRuntime<M> {
     }
 
     pub(super) fn ime_commit_text(&mut self, text: &str) -> Vec<UiEvent<M>> {
+        if !self.focus_in_modal() {
+            return Vec::new();
+        }
         let Some(Focus::Input { key, state }) = self.focus.as_mut() else {
             return Vec::new();
         };
         let key = key.clone();
+        let committed = single_line(text);
         let outcome = edit_outcome(state, |s| {
-            handle_text(s, text);
+            handle_text(s, &committed);
         });
         state.cancel_preedit();
         match outcome {
@@ -473,4 +600,14 @@ impl<M: Clone + 'static> UiRuntime<M> {
             }
         };
     }
+}
+
+fn is_arrow(key: PlatformKey) -> bool {
+    matches!(
+        key,
+        PlatformKey::ArrowLeft
+            | PlatformKey::ArrowRight
+            | PlatformKey::ArrowUp
+            | PlatformKey::ArrowDown
+    )
 }

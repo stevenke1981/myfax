@@ -1,17 +1,11 @@
-//! Text shaping and glyph conversion into [`DrawCommand::Text`].
+//! Glyph conversion into [`DrawCommand::Text`] and text style helpers. Shaping
+//! itself lives in `cache` so that results can be reused across frames.
 
 use acme_core::{
     AtlasUpload, Color, DrawCommand, GlyphDraw, GlyphFormat, Point, Scene, TextPrimitive,
 };
-use acme_text::{
-    AtlasFormat, FontSystem, GlyphAtlas, TextConstraints, TextLayout, TextStyle, TextWrap,
-};
+use acme_text::{AtlasFormat, FontSystem, GlyphAtlas, TextLayout, TextStyle};
 use acme_theme::ThemeColor;
-
-const ELLIPSIS: &str = "\u{2026}";
-
-/// Tolerance (logical px) before a single-line label is ellipsised.
-const FIT_SLACK: f32 = 1.0;
 
 pub(super) fn text_style(font_size: f32, line_height: f32) -> TextStyle {
     TextStyle {
@@ -19,50 +13,6 @@ pub(super) fn text_style(font_size: f32, line_height: f32) -> TextStyle {
         line_height,
         ..TextStyle::default()
     }
-}
-
-pub(super) fn shape(
-    fonts: &mut FontSystem,
-    text: &str,
-    style: &TextStyle,
-    max_width: Option<f32>,
-    wrap: TextWrap,
-    scale: f32,
-) -> TextLayout {
-    fonts.shape(text, style, TextConstraints { max_width, wrap }, scale)
-}
-
-/// Single-line shaping that ends in an ellipsis when the text is wider than `max_width`.
-pub(super) fn fit_line(
-    fonts: &mut FontSystem,
-    text: &str,
-    style: &TextStyle,
-    max_width: f32,
-    scale: f32,
-) -> TextLayout {
-    let full = shape(fonts, text, style, None, TextWrap::None, scale);
-    // Layout measurement and paint shaping can differ by sub-pixel amounts
-    // (hinting at the device scale); a label laid out at exactly its measured
-    // width must not be ellipsised.
-    if full.width <= max_width + FIT_SLACK || text.is_empty() {
-        return full;
-    }
-    let starts: Vec<usize> = text.char_indices().map(|(index, _)| index).collect();
-    let (mut low, mut high) = (0usize, starts.len());
-    while low < high {
-        let mid = (low + high).div_ceil(2);
-        let end = starts.get(mid).copied().unwrap_or(text.len());
-        let candidate = format!("{}{ELLIPSIS}", text.get(..end).unwrap_or(""));
-        let width = shape(fonts, &candidate, style, None, TextWrap::None, scale).width;
-        if width <= max_width {
-            low = mid;
-        } else {
-            high = mid - 1;
-        }
-    }
-    let end = starts.get(low).copied().unwrap_or(text.len());
-    let shown = format!("{}{ELLIPSIS}", text.get(..end).unwrap_or(""));
-    shape(fonts, &shown, style, None, TextWrap::None, scale)
 }
 
 fn glyph_format(format: AtlasFormat) -> GlyphFormat {

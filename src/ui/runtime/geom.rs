@@ -8,8 +8,18 @@ use acme_theme::ThemeColor;
 /// `[x, y, width, height]` in logical pixels.
 pub(super) type Rect4 = [f32; 4];
 
+/// Width of the keyboard focus ring (theme `ring` colour) on focusable widgets.
+pub(super) const FOCUS_RING_WIDTH: f32 = 2.0;
+
+/// Scroll offsets along each axis, in logical pixels (always `>= 0`).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct Offset2 {
+    pub x: f32,
+    pub y: f32,
+}
+
 /// Paint-time translation accumulated from enclosing scroll regions, plus the
-/// clip that applies to hit-testing inside them.
+/// clip that applies to painting and hit-testing inside them.
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct Ctx {
     pub dx: f32,
@@ -42,6 +52,33 @@ pub(super) fn intersect(clip: Option<Rect4>, rect: Rect4) -> Rect4 {
     let x1 = (clip[0] + clip[2]).min(rect[0] + rect[2]);
     let y1 = (clip[1] + clip[3]).min(rect[1] + rect[3]);
     [x0, y0, (x1 - x0).max(0.0), (y1 - y0).max(0.0)]
+}
+
+/// Whether anything of `rect` can be seen through `clip`: both have positive
+/// area and overlap. No clip means unclipped.
+pub(super) fn visible_in(rect: Rect4, clip: Option<Rect4>) -> bool {
+    let Some(clip) = clip else {
+        return true;
+    };
+    let has_area = |r: Rect4| r[2] > 0.0 && r[3] > 0.0;
+    has_area(rect)
+        && has_area(clip)
+        && rect[0] < clip[0] + clip[2]
+        && rect[0] + rect[2] > clip[0]
+        && rect[1] < clip[1] + clip[3]
+        && rect[1] + rect[3] > clip[1]
+}
+
+/// Bounding box of `acc` (when present) and `rect`.
+pub(super) fn join(acc: Option<Rect4>, rect: Rect4) -> Rect4 {
+    let Some(a) = acc else {
+        return rect;
+    };
+    let x0 = a[0].min(rect[0]);
+    let y0 = a[1].min(rect[1]);
+    let x1 = (a[0] + a[2]).max(rect[0] + rect[2]);
+    let y1 = (a[1] + a[3]).max(rect[1] + rect[3]);
+    [x0, y0, x1 - x0, y1 - y0]
 }
 
 pub(super) fn to_rect(rect: Rect4) -> Rect<Logical> {

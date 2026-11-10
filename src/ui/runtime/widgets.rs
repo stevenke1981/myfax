@@ -9,15 +9,13 @@ use acme_theme::Theme;
 use acme_widgets::{Button, ButtonState, Label, LabelWrap, TextInput};
 
 use super::edit::{Focus, InputSpec, adopt_value, sync_flags};
-use super::geom::{Ctx, Rect4, color, quad, to_rect};
+use super::geom::{Ctx, FOCUS_RING_WIDTH, Rect4, color, quad, to_rect};
 use super::hit::{Region, Target};
 use super::paint::Painter;
-use super::text::{fit_line, push_text, shape, text_style};
+use super::text::{push_text, text_style};
 
 /// Tolerance so a word-wrapped label re-wraps exactly as its measured layout did.
 const WRAP_SLACK: f32 = 0.5;
-/// Focus ring width for buttons and text inputs (theme `ring` colour).
-const FOCUS_RING_WIDTH: f32 = 2.0;
 
 /// Text style used by inputs; identical to the one `render_text_input` shapes with.
 pub(super) fn input_text_style(theme: &Theme) -> TextStyle {
@@ -50,8 +48,11 @@ impl<M: Clone> Painter<'_, M> {
             .unwrap_or(theme.colors.foreground);
         let width = rect[2].max(0.0);
         let laid = match label.wrap {
-            LabelWrap::None => fit_line(self.fonts, &label.text, &style, width, self.scale),
-            LabelWrap::Word => shape(
+            LabelWrap::None => {
+                self.text
+                    .fit_line(self.fonts, &label.text, &style, width, self.scale)
+            }
+            LabelWrap::Word => self.text.shape(
                 self.fonts,
                 &label.text,
                 &style,
@@ -59,7 +60,7 @@ impl<M: Clone> Painter<'_, M> {
                 TextWrap::Word,
                 self.scale,
             ),
-            LabelWrap::Character => shape(
+            LabelWrap::Character => self.text.shape(
                 self.fonts,
                 &label.text,
                 &style,
@@ -100,8 +101,7 @@ impl<M: Clone> Painter<'_, M> {
 
     /// Focus state for a button; records that the focused target was painted.
     fn take_button_focus(&mut self, key: &str, disabled: bool) -> bool {
-        let focused = !disabled
-            && matches!(self.focus.as_ref(), Some(Focus::Button { key: k }) if k.as_str() == key);
+        let focused = !disabled && self.button_has_focus(key);
         if focused {
             self.focus_found = true;
         }
@@ -125,7 +125,8 @@ impl<M: Clone> Painter<'_, M> {
                 focused,
             },
         );
-        let (border_width, border) = if focused {
+        let ring = focused && self.focus_visible;
+        let (border_width, border) = if ring {
             (FOCUS_RING_WIDTH, resolved.focus)
         } else {
             (1.0, resolved.border)
@@ -143,7 +144,7 @@ impl<M: Clone> Painter<'_, M> {
             .style
             .line_height
             .unwrap_or(theme.typography.body * theme.typography.line_height);
-        let laid = shape(
+        let laid = self.text.shape(
             self.fonts,
             &button.label,
             &text_style(size, line_height),
@@ -189,10 +190,7 @@ impl<M: Clone> Painter<'_, M> {
             padding: theme.spacing.px2,
             style: input_text_style(theme),
         };
-        let focused_here = matches!(
-            self.focus.as_ref(),
-            Some(Focus::Input { key: k, .. }) if k.as_str() == key
-        );
+        let focused_here = self.input_has_focus(key);
         if !input.disabled {
             self.push_region(Region {
                 target: Target::Input(key.to_owned()),
@@ -232,13 +230,15 @@ impl<M: Clone> Painter<'_, M> {
             true,
             None,
         );
-        self.out.push(quad(
-            rect,
-            Color::TRANSPARENT,
-            self.theme.radii.sm,
-            FOCUS_RING_WIDTH,
-            color(self.theme.colors.ring),
-        ));
+        if self.focus_visible {
+            self.out.push(quad(
+                rect,
+                Color::TRANSPARENT,
+                self.theme.radii.sm,
+                FOCUS_RING_WIDTH,
+                color(self.theme.colors.ring),
+            ));
+        }
         let caret = state.ime_caret_area(self.fonts, &spec.style, self.scale);
         self.frame.ime_caret = Some([
             rect[0] + spec.padding + caret[0],

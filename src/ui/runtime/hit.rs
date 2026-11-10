@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use super::edit::InputSpec;
-use super::geom::{Rect4, clamp_offset, region_contains};
+use super::geom::{Offset2, Rect4, clamp_offset, region_contains};
 
 /// Pixels per wheel line in the runtime contract (the value a notch should move).
 pub(super) const WHEEL_LINE_PX: f32 = 40.0;
@@ -16,7 +16,10 @@ pub(super) const PLATFORM_LINE_PX: f32 = 32.0;
 pub(super) enum Target {
     Button(String),
     Input(String),
-    /// Container identity: index among clickable or modal containers in paint order.
+    /// A keyed clickable container: focusable and identified by its key.
+    Keyed(String),
+    /// An unkeyed clickable or modal container: index among such containers in
+    /// paint order.
     Container(usize),
 }
 
@@ -37,11 +40,18 @@ pub(super) struct Region<M> {
 /// A scroll viewport recorded during paint.
 pub(super) struct ScrollRegion {
     pub key: String,
-    pub horizontal: bool,
     pub viewport: Rect4,
     pub clip: Option<Rect4>,
-    pub max: f32,
+    /// Largest offset per axis (zero when that axis does not overflow).
+    pub max: Offset2,
     pub seq: usize,
+}
+
+/// Paint-sequence span `[start, end)` of a `modal:` container.
+pub(super) struct ModalSpan {
+    pub start: usize,
+    pub end: usize,
+    pub key: String,
 }
 
 /// Everything recorded by the last render that input handling needs.
@@ -49,8 +59,8 @@ pub(super) struct FrameState<M> {
     pub regions: Vec<Region<M>>,
     pub scroll: Vec<ScrollRegion>,
     pub ime_caret: Option<Rect4>,
-    /// Paint-sequence span `[start, end)` of the last-started `modal:` container.
-    pub modal: Option<(usize, usize)>,
+    /// The last-started `modal:` container, if any.
+    pub modal: Option<ModalSpan>,
 }
 
 impl<M> Default for FrameState<M> {
@@ -90,11 +100,31 @@ pub(super) fn wheel_pixels(dx: f32, dy: f32, lines: bool) -> (f32, f32) {
     }
 }
 
+fn finite_or_zero(value: f32) -> f32 {
+    if value.is_finite() { value } else { 0.0 }
+}
+
+/// Offset after one wheel delta. A vertical delta moves y when the region
+/// overflows vertically; otherwise it moves x. A horizontal delta always moves x.
+pub(super) fn scrolled(current: Offset2, max: Offset2, px: f32, py: f32) -> Offset2 {
+    let (x_delta, y_delta) = if max.y > 0.0 {
+        (px, py)
+    } else if px != 0.0 {
+        (px, 0.0)
+    } else {
+        (py, 0.0)
+    };
+    Offset2 {
+        x: clamp_offset(current.x - x_delta, max.x),
+        y: clamp_offset(current.y - y_delta, max.y),
+    }
+}
+
 /// Scrolls the innermost unblocked scroll region under the pointer whose offset
 /// can still move. Returns `true` when an offset changed.
 pub(super) fn scroll_at<M>(
     frame: &FrameState<M>,
-    offsets: &mut HashMap<String, f32>,
+    offsets: &mut HashMap<String, Offset2>,
     dx: f32,
     dy: f32,
     lines: bool,
@@ -102,6 +132,7 @@ pub(super) fn scroll_at<M>(
     y: f32,
 ) -> bool {
     let (px, py) = wheel_pixels(dx, dy, lines);
+    let (px, py) = (finite_or_zero(px), finite_or_zero(py));
     let blocking_seq = frame
         .regions
         .iter()
@@ -115,16 +146,11 @@ pub(super) fn scroll_at<M>(
         if !region_contains(region.viewport, region.clip, x, y) {
             continue;
         }
-        let delta = if region.horizontal && px != 0.0 {
-            px
-        } else {
-            py
-        };
-        if delta == 0.0 || !delta.is_finite() {
-            continue;
-        }
-        let current = offsets.get(region.key.as_str()).copied().unwrap_or(0.0);
-        let next = clamp_offset(current - delta, region.max);
+        let current = offsets
+            .get(region.key.as_str())
+            .copied()
+            .unwrap_or_default();
+        let next = scrolled(current, region.max, px, py);
         if next != current {
             offsets.insert(region.key.clone(), next);
             return true;

@@ -51,6 +51,13 @@ fn rect_of(rt: &Rt, target: &Target) -> [f32; 4] {
         .unwrap_or_else(|| panic!("no region for {target:?}"))
 }
 
+fn has_region(rt: &Rt, key: &str) -> bool {
+    rt.frame
+        .regions
+        .iter()
+        .any(|region| region.target == Target::Button(key.to_owned()))
+}
+
 fn center(rect: [f32; 4]) -> (f32, f32) {
     (rect[0] + rect[2] / 2.0, rect[1] + rect[3] / 2.0)
 }
@@ -266,10 +273,15 @@ fn modal_restricts_tab_focus_to_its_children() {
         rt.focus_target()
     };
 
-    assert_eq!(tab(&mut rt, false), Some(Target::Button("in1".to_owned())));
+    assert_eq!(
+        rt.focus_target(),
+        Some(Target::Button("in1".to_owned())),
+        "the modal takes focus on its first frame"
+    );
     assert_eq!(tab(&mut rt, false), Some(Target::Input("name".to_owned())));
     assert_eq!(tab(&mut rt, false), Some(Target::Button("in1".to_owned())));
-    assert_eq!(tab(&mut rt, true), Some(Target::Input("name".to_owned())));
+    assert_eq!(tab(&mut rt, false), Some(Target::Input("name".to_owned())));
+    assert_eq!(tab(&mut rt, true), Some(Target::Button("in1".to_owned())));
 }
 
 #[test]
@@ -373,12 +385,12 @@ fn left_then_insert_places_text_in_the_middle() {
 }
 
 #[test]
-fn enter_submits_and_escape_cancels_and_blurs() {
+fn enter_submits_and_escape_blurs_input_before_cancelling() {
     let mut rt = Rt::new();
     input_focus(&mut rt);
 
     let submit = rt.key(PlatformKey::Enter, true, Modifiers::default(), None);
-    let cancel = rt.key(PlatformKey::Escape, true, Modifiers::default(), None);
+    let blur = rt.key(PlatformKey::Escape, true, Modifiers::default(), None);
 
     assert_eq!(
         submit,
@@ -386,12 +398,255 @@ fn enter_submits_and_escape_cancels_and_blurs() {
             key: "name".to_owned()
         }]
     );
-    assert_eq!(cancel, vec![UiEvent::Cancel]);
+    assert!(blur.is_empty(), "escape in a focused input only blurs");
     assert_eq!(rt.focused_input(), None);
     assert_eq!(
         rt.key(PlatformKey::Escape, true, Modifiers::default(), None),
         vec![UiEvent::Cancel],
-        "escape with nothing focused still cancels"
+        "escape with nothing focused cancels"
+    );
+}
+
+#[test]
+fn escape_with_focused_button_cancels() {
+    let mut rt = Rt::new();
+    let root = column::<Msg>()
+        .child(button::<Msg>("go", "Go").on_click(Msg::Go))
+        .build();
+    render(&mut rt, &root);
+    let _ = click_center(&mut rt, &Target::Button("go".to_owned()));
+
+    assert_eq!(
+        rt.key(PlatformKey::Escape, true, Modifiers::default(), None),
+        vec![UiEvent::Cancel]
+    );
+    assert_eq!(rt.focus_target(), None);
+}
+
+#[test]
+fn ime_commit_and_paste_flatten_line_breaks_and_drop_controls() {
+    let mut rt = Rt::new();
+    input_focus(&mut rt);
+
+    assert_eq!(
+        rt.ime_commit("你\r\n好\t\u{7}!"),
+        vec![text_changed("你 好 !")]
+    );
+
+    let mut state = acme_textinput::TextInputState::new();
+    super::edit::paste_into(&mut state, "a\r\nb\tc\u{1b}\rd\ne");
+    assert_eq!(state.text, "a b c d e");
+}
+
+#[test]
+fn modal_appearing_takes_focus_and_background_buttons_stay_inert() {
+    let mut rt = Rt::new();
+    let background = column::<Msg>()
+        .child(button::<Msg>("bg", "Bg").on_click(Msg::Go))
+        .build();
+    render(&mut rt, &background);
+    let _ = rt.key(PlatformKey::Tab, true, Modifiers::default(), None);
+    let with_modal = column::<Msg>()
+        .child(button::<Msg>("bg", "Bg").on_click(Msg::Go))
+        .child(
+            column::<Msg>()
+                .key("modal:dlg")
+                .child(button::<Msg>("ok", "OK").on_click(Msg::Inner))
+                .build(),
+        )
+        .build();
+    render(&mut rt, &with_modal);
+
+    assert_eq!(
+        rt.key(PlatformKey::Enter, true, Modifiers::default(), None),
+        vec![UiEvent::Message(Msg::Inner)],
+        "focus moved into the modal; the background button must not fire"
+    );
+}
+
+#[test]
+fn modal_blocks_typing_into_background_input() {
+    let mut rt = Rt::new();
+    let background = column::<Msg>()
+        .child(text_input::<Msg>("bgname").on_change(Msg::Text))
+        .build();
+    render(&mut rt, &background);
+    let _ = rt.key(PlatformKey::Tab, true, Modifiers::default(), None);
+    let with_modal = column::<Msg>()
+        .child(text_input::<Msg>("bgname").on_change(Msg::Text))
+        .child(
+            column::<Msg>()
+                .key("modal:dlg")
+                .child(button::<Msg>("ok", "OK").on_click(Msg::Inner))
+                .build(),
+        )
+        .build();
+    render(&mut rt, &with_modal);
+
+    assert!(type_chars(&mut rt, "x").is_empty());
+}
+
+fn two_axis_list() -> WidgetNode<Msg> {
+    let mut list = column::<Msg>()
+        .key("list")
+        .size(300.0, 100.0)
+        .overflow_scroll();
+    list = list.child(
+        row::<Msg>()
+            .size(600.0, 30.0)
+            .child(button::<Msg>("wide", "Wide").on_click(Msg::Go))
+            .build(),
+    );
+    for index in 0..8 {
+        list = list.child(
+            button::<Msg>(format!("t{index}"), format!("Tall {index}")).on_click(Msg::Other),
+        );
+    }
+    list.build()
+}
+
+#[test]
+fn scroll_region_scrolls_both_axes_by_wheel_axis() {
+    let mut rt = Rt::new();
+    let root = two_axis_list();
+    render(&mut rt, &root);
+    let (x, y) = center(rt.frame.scroll[0].viewport);
+    let wide0 = rect_of(&rt, &Target::Button("wide".to_owned()))[0];
+    let first0 = rect_of(&rt, &Target::Button("t0".to_owned()))[1];
+
+    assert!(
+        rt.scroll(-30.0, 0.0, false, x, y),
+        "horizontal wheel scrolls x"
+    );
+    render(&mut rt, &root);
+    assert_eq!(
+        rect_of(&rt, &Target::Button("wide".to_owned()))[0],
+        wide0 - 30.0
+    );
+    assert_eq!(rect_of(&rt, &Target::Button("t0".to_owned()))[1], first0);
+
+    assert!(
+        rt.scroll(0.0, -20.0, false, x, y),
+        "vertical wheel scrolls y"
+    );
+    render(&mut rt, &root);
+    assert_eq!(
+        rect_of(&rt, &Target::Button("t0".to_owned()))[1],
+        first0 - 20.0
+    );
+    assert_eq!(
+        rect_of(&rt, &Target::Button("wide".to_owned()))[0],
+        wide0 - 30.0
+    );
+}
+
+#[test]
+fn vertical_wheel_pans_a_region_that_only_overflows_horizontally() {
+    let mut rt = Rt::new();
+    let root = column::<Msg>()
+        .key("strip")
+        .size(300.0, 100.0)
+        .overflow_scroll()
+        .child(
+            row::<Msg>()
+                .size(600.0, 30.0)
+                .child(button::<Msg>("sw", "Wide").on_click(Msg::Go))
+                .build(),
+        )
+        .build();
+    render(&mut rt, &root);
+    let (x, y) = center(rt.frame.scroll[0].viewport);
+    let sw0 = rect_of(&rt, &Target::Button("sw".to_owned()))[0];
+
+    assert!(rt.scroll(0.0, -20.0, false, x, y));
+    render(&mut rt, &root);
+
+    assert_eq!(
+        rect_of(&rt, &Target::Button("sw".to_owned()))[0],
+        sw0 - 20.0
+    );
+}
+
+#[test]
+fn keyed_clickable_container_takes_keyboard_focus_and_activates() {
+    let mut rt = Rt::new();
+    let ring = color(Theme::light().colors.ring);
+    let has_ring = |scene: &Scene| {
+        quads(scene)
+            .iter()
+            .any(|q| q.border_width == 2.0 && q.border_color == ring)
+    };
+    let root = column::<Msg>()
+        .child(
+            row::<Msg>()
+                .key("mail:1")
+                .padding(10.0)
+                .on_click(Msg::Row)
+                .child(label::<Msg>("Mail"))
+                .build(),
+        )
+        .build();
+    render(&mut rt, &root);
+
+    let _ = rt.key(PlatformKey::Tab, true, Modifiers::default(), None);
+    assert!(
+        has_ring(&render(&mut rt, &root)),
+        "keyboard focus draws the ring"
+    );
+    assert_eq!(
+        rt.key(PlatformKey::Enter, true, Modifiers::default(), None),
+        vec![UiEvent::Message(Msg::Row)]
+    );
+    assert_eq!(
+        rt.key(PlatformKey::Space, true, Modifiers::default(), None),
+        vec![UiEvent::Message(Msg::Row)]
+    );
+
+    let rect = rt
+        .frame
+        .regions
+        .iter()
+        .find(|region| region.message.is_some())
+        .map(|region| region.rect)
+        .unwrap_or_else(|| panic!("container region missing"));
+    let _ = click_at(&mut rt, rect[0] + 2.0, rect[1] + 2.0);
+    assert!(
+        !has_ring(&render(&mut rt, &root)),
+        "pointer focus draws no ring"
+    );
+    assert_eq!(
+        rt.key(PlatformKey::Enter, true, Modifiers::default(), None),
+        vec![UiEvent::Message(Msg::Row)],
+        "a click keeps the container focused"
+    );
+}
+
+#[test]
+fn off_screen_text_is_not_shaped() {
+    let mut rt = Rt::new();
+    render(&mut rt, &inbox_list(200));
+
+    assert!(rt.text.shape_calls > 0, "visible rows are shaped");
+    assert!(
+        rt.text.shape_calls < 150,
+        "600 labels, only the visible rows should shape; got {}",
+        rt.text.shape_calls
+    );
+}
+
+#[test]
+fn identical_second_frame_reuses_shaped_text() {
+    let mut rt = Rt::new();
+    let root = inbox_list(20);
+    render(&mut rt, &root);
+    let first = rt.text.shape_calls;
+    assert!(first > 0);
+
+    render(&mut rt, &root);
+
+    assert_eq!(
+        rt.text.shape_calls, first,
+        "no new shaping for an identical frame"
     );
 }
 
@@ -444,21 +699,21 @@ fn scroll_region_scrolls_clamps_and_persists() {
     let (x, y) = center(viewport);
 
     assert!(rt.scroll(0.0, -100.0, false, x, y));
-    assert_eq!(rt.scroll_offsets.get("list"), Some(&100.0));
+    assert_eq!(rt.scroll_offsets.get("list").map(|o| o.y), Some(100.0));
     assert!(rt.scroll(0.0, -1000.0, false, x, y));
     assert_eq!(
-        rt.scroll_offsets.get("list"),
-        Some(&260.0),
+        rt.scroll_offsets.get("list").map(|o| o.y),
+        Some(260.0),
         "clamped to content - viewport"
     );
     render(&mut rt, &root);
     assert_eq!(
-        rt.scroll_offsets.get("list"),
-        Some(&260.0),
+        rt.scroll_offsets.get("list").map(|o| o.y),
+        Some(260.0),
         "offset persists across frames"
     );
     assert!(rt.scroll(0.0, 1000.0, false, x, y));
-    assert_eq!(rt.scroll_offsets.get("list"), Some(&0.0));
+    assert_eq!(rt.scroll_offsets.get("list").map(|o| o.y), Some(0.0));
 }
 
 #[test]
@@ -466,10 +721,9 @@ fn button_scrolled_out_of_view_is_not_clickable() {
     let mut rt = Rt::new();
     let root = scroll_list();
     render(&mut rt, &root);
-    let (x, y) = center(rect_of(&rt, &Target::Button("b9".to_owned())));
     assert!(
-        click_at(&mut rt, x, y).is_empty(),
-        "b9 is below the viewport"
+        !has_region(&rt, "b9"),
+        "b9 is below the viewport and has no hit region"
     );
 
     let viewport = rt.frame.scroll[0].viewport;
@@ -478,11 +732,7 @@ fn button_scrolled_out_of_view_is_not_clickable() {
     render(&mut rt, &root);
     let (x, y) = center(rect_of(&rt, &Target::Button("b9".to_owned())));
     assert_eq!(click_at(&mut rt, x, y), vec![UiEvent::Message(Msg::Other)]);
-    let (x, y) = center(rect_of(&rt, &Target::Button("b0".to_owned())));
-    assert!(
-        click_at(&mut rt, x, y).is_empty(),
-        "b0 is above the viewport"
-    );
+    assert!(!has_region(&rt, "b0"), "b0 is above the viewport");
 }
 
 #[test]
@@ -590,7 +840,7 @@ fn clickable_container_shows_hover_and_pressed_overlay() {
 }
 
 #[test]
-fn focused_input_and_button_draw_two_pixel_ring() {
+fn focus_ring_follows_keyboard_focus_not_pointer_focus() {
     let mut rt = Rt::new();
     let ring = color(Theme::light().colors.ring);
     let has_ring = |scene: &Scene| {
@@ -602,8 +852,12 @@ fn focused_input_and_button_draw_two_pixel_ring() {
     assert!(!has_ring(&idle));
 
     input_focus(&mut rt);
-    let focused = render(&mut rt, &input_view(""));
-    assert!(has_ring(&focused));
+    assert!(
+        !has_ring(&render(&mut rt, &input_view(""))),
+        "a pointer click focuses without the ring"
+    );
+    let _ = rt.key(PlatformKey::Tab, true, Modifiers::default(), None);
+    assert!(has_ring(&render(&mut rt, &input_view(""))));
 
     let root = column::<Msg>()
         .child(button::<Msg>("go", "Go").on_click(Msg::Go))
@@ -611,6 +865,8 @@ fn focused_input_and_button_draw_two_pixel_ring() {
     render(&mut rt, &root);
     let _ = rt.key(PlatformKey::Tab, true, Modifiers::default(), None);
     assert!(has_ring(&render(&mut rt, &root)));
+    let _ = click_center(&mut rt, &Target::Button("go".to_owned()));
+    assert!(!has_ring(&render(&mut rt, &root)), "a click hides the ring");
 }
 
 #[test]
@@ -682,5 +938,196 @@ fn reset_scroll_returns_region_to_top() {
     rt.reset_scroll("list");
     render(&mut rt, &scroll_list());
 
-    assert_eq!(rt.scroll_offsets.get("list"), Some(&0.0));
+    assert_eq!(rt.scroll_offsets.get("list").map(|o| o.y), Some(0.0));
+}
+
+/// Keyed, scrollable inbox-like list: one clickable row per mail with three labels.
+fn inbox_list(rows: usize) -> WidgetNode<Msg> {
+    let mut list = column::<Msg>()
+        .key("inbox")
+        .size(640.0, 480.0)
+        .overflow_scroll();
+    for index in 0..rows {
+        list = list.child(
+            row::<Msg>()
+                .key(format!("mail:{index}"))
+                .padding(6.0)
+                .on_click(Msg::Row)
+                .child(label::<Msg>(format!("Sender {index}")))
+                .child(label::<Msg>(format!("Subject line number {index}")))
+                .child(label::<Msg>(format!("2026-11-{:02}", index % 28 + 1)))
+                .build(),
+        );
+    }
+    list.build()
+}
+
+/// Micro-benchmark: `cargo test --release --lib ui::runtime -- --ignored --nocapture bench_render`.
+#[test]
+#[ignore]
+fn bench_render_200_row_column() {
+    for rows in [50usize, 200] {
+        let root = inbox_list(rows);
+        let mut rt = Rt::new();
+        let start = std::time::Instant::now();
+        render(&mut rt, &root);
+        let cold = start.elapsed();
+        let mut warm = Vec::new();
+        for _ in 0..20 {
+            let start = std::time::Instant::now();
+            let scene = render(&mut rt, &root);
+            warm.push(start.elapsed().as_secs_f64() * 1000.0);
+            assert!(scene.validate().is_ok());
+        }
+        warm.sort_by(f64::total_cmp);
+        let avg = warm.iter().sum::<f64>() / warm.len() as f64;
+        println!(
+            "BENCH rows={rows} cold_ms={:.2} warm_avg_ms={avg:.2} warm_min_ms={:.2} warm_max_ms={:.2} commands={}",
+            cold.as_secs_f64() * 1000.0,
+            warm[0],
+            warm[warm.len() - 1],
+            render(&mut rt, &root).commands().len(),
+        );
+    }
+}
+
+#[test]
+fn focused_button_scrolled_out_of_view_keeps_focus() {
+    let mut rt = Rt::new();
+    let root = scroll_list();
+    render(&mut rt, &root);
+    let _ = rt.key(PlatformKey::Tab, true, Modifiers::default(), None);
+    assert_eq!(rt.focus_target(), Some(Target::Button("b0".to_owned())));
+    let (x, y) = center(rt.frame.scroll[0].viewport);
+    assert!(rt.scroll(0.0, -1000.0, false, x, y));
+
+    render(&mut rt, &root);
+
+    assert!(!has_region(&rt, "b0"), "b0 is above the viewport");
+    assert_eq!(
+        rt.focus_target(),
+        Some(Target::Button("b0".to_owned())),
+        "focus survives culling"
+    );
+}
+
+#[test]
+fn nested_scroll_offset_survives_being_scrolled_out_of_view() {
+    let mut rt = Rt::new();
+    let mut inner = column::<Msg>()
+        .key("inner")
+        .size(300.0, 100.0)
+        .overflow_scroll();
+    for index in 0..5 {
+        inner = inner
+            .child(button::<Msg>(format!("i{index}"), format!("Inner {index}")).on_click(Msg::Go));
+    }
+    let root = column::<Msg>()
+        .key("outer")
+        .size(400.0, 200.0)
+        .overflow_scroll()
+        .child(inner.build())
+        .child(column::<Msg>().size(400.0, 400.0).build())
+        .build();
+    render(&mut rt, &root);
+    let inner_view = rt
+        .frame
+        .scroll
+        .iter()
+        .find(|region| region.key == "inner")
+        .map(|region| region.viewport)
+        .unwrap_or_else(|| panic!("inner scroll region missing"));
+    let (ix, iy) = center(inner_view);
+    assert!(rt.scroll(0.0, -40.0, false, ix, iy));
+    let outer_view = rt
+        .frame
+        .scroll
+        .iter()
+        .find(|region| region.key == "outer")
+        .map(|region| region.viewport)
+        .unwrap_or_else(|| panic!("outer scroll region missing"));
+    assert!(rt.scroll(
+        0.0,
+        -300.0,
+        false,
+        outer_view[0] + 5.0,
+        outer_view[1] + 180.0
+    ));
+
+    render(&mut rt, &root);
+
+    assert!(
+        !rt.frame.scroll.iter().any(|region| region.key == "inner"),
+        "inner region is scrolled out of the outer viewport"
+    );
+    assert_eq!(
+        rt.scroll_offsets.get("inner").map(|o| o.y),
+        Some(40.0),
+        "hidden nested offsets are kept"
+    );
+}
+
+#[test]
+fn keyed_container_hover_overlay_still_works() {
+    let mut rt = Rt::new();
+    let root = column::<Msg>()
+        .child(
+            row::<Msg>()
+                .key("mail:1")
+                .padding(20.0)
+                .on_click(Msg::Row)
+                .child(label::<Msg>("Tap"))
+                .build(),
+        )
+        .build();
+    render(&mut rt, &root);
+    let rect = rt
+        .frame
+        .regions
+        .iter()
+        .find(|region| region.message.is_some())
+        .map(|region| region.rect)
+        .unwrap_or_else(|| panic!("container region missing"));
+    let hover_color = color(Theme::light().colors.ghost_hover);
+    let fills = |scene: &Scene| quads(scene).iter().map(|q| q.color).collect::<Vec<_>>();
+
+    assert!(rt.pointer_moved(rect[0] + 5.0, rect[1] + 5.0));
+
+    assert!(fills(&render(&mut rt, &root)).contains(&hover_color));
+}
+
+/// Floor measurement: the framework layout pass alone (not paint).
+#[test]
+#[ignore]
+fn bench_layout_floor_200_rows() {
+    use acme_core::NodeId;
+    use acme_layout::WidgetLayoutContext;
+    let theme = Theme::light();
+    let context = WidgetLayoutContext {
+        body_font_size: theme.typography.body,
+        body_line_height: theme.typography.body * theme.typography.line_height,
+        label_font_size: theme.typography.label,
+        control_height: theme.control_height(3),
+        scale_factor: 1.0,
+    };
+    for rows in [50usize, 200] {
+        let root = inbox_list(rows);
+        let mut rt = Rt::new();
+        let tree = root.to_layout_with_context(NodeId::new(1), &context);
+        let mut times = Vec::new();
+        for _ in 0..20 {
+            let start = std::time::Instant::now();
+            let snapshot = rt
+                .layout
+                .compute_with_text(&tree, (800.0, 600.0), &mut rt.fonts, 1.0);
+            times.push(start.elapsed().as_secs_f64() * 1000.0);
+            assert!(snapshot.is_ok());
+        }
+        times.sort_by(f64::total_cmp);
+        println!(
+            "LAYOUT_FLOOR rows={rows} warm_min_ms={:.2} warm_median_ms={:.2}",
+            times[0],
+            times[times.len() / 2]
+        );
+    }
 }
