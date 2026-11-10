@@ -253,10 +253,23 @@ fn copy_into_archive(src: &Path, dest: &Path, size: u64, lang: Lang) -> anyhow::
             )
         })?;
     }
-    let copied = match std::fs::copy(src, dest) {
+    // `create_new` never overwrites an archived fax that appeared after
+    // `archive_path_for` chose this name; only a file we created is removed.
+    let created = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(dest);
+    let copied = match created.and_then(|mut out| {
+        let mut input = std::fs::File::open(src)?;
+        let n = std::io::copy(&mut input, &mut out)?;
+        out.sync_all()?;
+        Ok(n)
+    }) {
         Ok(copied) => copied,
         Err(err) => {
-            remove_quietly(dest);
+            if err.kind() != std::io::ErrorKind::AlreadyExists {
+                remove_quietly(dest);
+            }
             return Err(anyhow::Error::from(err).context(tf(
                 lang,
                 "archive.err_copy",
