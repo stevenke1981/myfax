@@ -3,3 +3,4 @@
 *.db
 *.db-journal
 result_*.md
+.claude/worktrees/
