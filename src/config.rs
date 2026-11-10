@@ -142,10 +142,12 @@ mod tests {
     fn roundtrip_and_partial_json() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("s.json");
-        let mut s = Settings::default();
-        s.language = Lang::En;
-        s.poll_interval_secs = 0; // clamped
-        s.watch_folders = vec!["a".into(), "a".into(), "".into(), "b".into()];
+        let s = Settings {
+            language: Lang::En,
+            poll_interval_secs: 0, // clamped
+            watch_folders: vec!["a".into(), "a".into(), "".into(), "b".into()],
+            ..Settings::default()
+        };
         save_settings(&path, &s).unwrap();
         let back = load_settings(&path).unwrap();
         assert_eq!(back.language, Lang::En);
