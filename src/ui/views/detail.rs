@@ -17,8 +17,10 @@ use acme_widgets::{
 
 /// Aspect ratio used for a preview slot before the page size is known (A4, height / width).
 const A4_RATIO: f32 = 1.414;
-/// Width available for the page inside the detail pane (pane minus its padding).
-const PREVIEW_INNER_W: f32 = DETAIL_W - 2.0 * PANE_PAD;
+/// Border of the scrolling preview viewport (drawn inside its box, 1 px per side).
+const PREVIEW_BORDER: f32 = 1.0;
+/// Width available for the page: pane minus its padding and the viewport border.
+const PREVIEW_INNER_W: f32 = DETAIL_W - 2.0 * PANE_PAD - 2.0 * PREVIEW_BORDER;
 /// Zoom range, matching `PreviewState::zoom` (0.5..=3.0).
 const ZOOM_MIN: f32 = 0.5;
 const ZOOM_MAX: f32 = 3.0;

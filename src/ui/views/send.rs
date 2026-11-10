@@ -18,7 +18,7 @@ const FORM_MIN_W: f32 = 420.0;
 const HISTORY_W: f32 = 360.0;
 const PRINTER_ROW_H: f32 = 36.0;
 const PRINTER_NAME_UNITS: usize = 48;
-const CONTACT_PICK_LIMIT: usize = 8;
+const CONTACT_PICK_LIMIT: usize = 200;
 const CONTACT_LIST_H: f32 = 132.0;
 const HISTORY_LIMIT: usize = 100;
 const HISTORY_FILE_UNITS: usize = 36;
@@ -468,12 +468,19 @@ mod tests {
     }
 
     #[test]
-    fn contact_quick_pick_is_limited_to_eight() {
+    fn contact_quick_pick_lists_every_contact_with_a_number() {
         let mut st = state(&[], None, "");
         st.contacts = (1..=10).map(|id| contact(id, "X", "0223456789")).collect();
         let picks = quick_pick(&st.contacts);
-        assert_eq!(picks.len(), CONTACT_PICK_LIMIT);
+        assert_eq!(picks.len(), 10);
         assert_eq!(picks.first().map(|c| c.id), Some(1));
+    }
+
+    #[test]
+    fn contact_quick_pick_is_capped_at_the_pick_limit() {
+        let contacts: Vec<Contact> = (1..=250).map(|id| contact(id, "X", "0223456789")).collect();
+        let picks = quick_pick(&contacts);
+        assert_eq!(picks.len(), CONTACT_PICK_LIMIT);
     }
 
     #[test]

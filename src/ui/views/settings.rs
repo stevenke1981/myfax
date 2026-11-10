@@ -270,7 +270,9 @@ fn storage_card(state: &AppState) -> WidgetNode<Msg> {
     let lang = state.lang;
     let archive_valid = !state.field(Field::ArchiveRoot).trim().is_empty();
     let mut archive = input(state, Field::ArchiveRoot);
+    let mut archive_error = None;
     if !archive_valid {
+        archive_error = Some(t(lang, "settings.err_archive"));
         archive = archive
             .invalid(true)
             .validation(t(lang, "settings.err_archive"));
@@ -292,11 +294,11 @@ fn storage_card(state: &AppState) -> WidgetNode<Msg> {
                 .on_click(Msg::OpenArchiveFolder),
         )
         .build();
-    let archive_field = column::<Msg>()
-        .gap(4.0)
-        .child(kit::field(t(lang, "settings.archive_root"), archive_line))
-        .child(kit::caption(t(lang, "settings.archive_hint")))
-        .build();
+    let archive_field = field_with_hint(
+        kit::field(t(lang, "settings.archive_root"), archive_line),
+        archive_error,
+        t(lang, "settings.archive_hint"),
+    );
     let retention = state.field(Field::TrashRetention);
     let page = state.field(Field::PageSize);
     card::<Msg>()
@@ -413,14 +415,22 @@ fn number_field(
     error: &str,
 ) -> WidgetNode<Msg> {
     let mut text = input(state, field);
+    let mut error_text = None;
     if !valid {
         text = text.invalid(true).validation(error);
+        error_text = Some(error);
     }
-    column::<Msg>()
-        .gap(4.0)
-        .child(kit::field(label, text.build()))
-        .child(kit::caption(hint))
-        .build()
+    field_with_hint(kit::field(label, text.build()), error_text, hint)
+}
+
+/// Field (label + input) followed by its validation message (Danger caption, when
+/// invalid) and the hint caption. The runtime does not draw `validation()` text itself.
+fn field_with_hint(field: WidgetNode<Msg>, error: Option<&str>, hint: &str) -> WidgetNode<Msg> {
+    let mut stack = column::<Msg>().gap(4.0).child(field);
+    if let Some(message) = error {
+        stack = stack.child(kit::colored(message, 12.0, ColorToken::Danger));
+    }
+    stack.child(kit::caption(hint)).build()
 }
 
 /// True when `raw` parses as an integer in `min..=max`.
@@ -600,6 +610,27 @@ mod tests {
         assert_eq!(input_invalid(&root, "field.trash_retention"), Some(true));
         assert_eq!(input_invalid(&root, "field.archive_root"), Some(true));
         assert!(texts(&root).contains(&t(Lang::ZhTw, "settings.poll_hint").to_string()));
+    }
+
+    #[test]
+    fn invalid_fields_show_their_message_as_visible_caption() {
+        let mut st = primed();
+        st.fields.insert(Field::PollInterval, "1".into());
+        st.fields.insert(Field::ArchiveRoot, "  ".into());
+        let root = view_of(&st);
+        let texts = texts(&root);
+        assert!(texts.contains(&t(Lang::ZhTw, "settings.err_archive").to_string()));
+        let poll_error = t(Lang::ZhTw, "settings.err_poll");
+        assert!(
+            texts.contains(&poll_error.to_string()),
+            "missing {poll_error}"
+        );
+    }
+
+    #[test]
+    fn valid_fields_show_no_validation_caption() {
+        let texts = texts(&view_of(&primed()));
+        assert!(!texts.contains(&t(Lang::ZhTw, "settings.err_archive").to_string()));
     }
 
     #[test]

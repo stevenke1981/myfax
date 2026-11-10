@@ -27,7 +27,8 @@ const SHORT_LABEL_MAX_DAYS: u32 = 7;
 const COUNT_LABEL_MAX_BARS: usize = 12;
 /// In the 30-day range every fifth axis label is printed (plus the last one).
 const LABEL_EVERY: usize = 5;
-const BARS_BOX_H: f32 = kit::CHART_H + 16.0;
+/// Bar box: the count label above the tallest bar (about 21 px) plus the bar itself.
+const BARS_BOX_H: f32 = kit::CHART_H + 24.0;
 /// Smallest visible bar height for a non-zero bucket.
 const MIN_BAR_H: f32 = 2.0;
 const TOP_LIMIT: usize = 10;

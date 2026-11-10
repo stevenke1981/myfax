@@ -119,6 +119,16 @@ fn trash_with_items_offers_empty_trash_instead_of_mark_all_read() {
 }
 
 #[test]
+fn empty_trash_without_items_offers_neither_trash_nor_mark_all_read_action() {
+    let mut state = three_faxes();
+    state.query.folder = Folder::Trash;
+    state.counts.trash = 0;
+    let tree = walk(&view(&state));
+    assert!(!tree.has_key("btn.mark_all_read"));
+    assert!(!tree.has_key("btn.empty_trash"));
+}
+
+#[test]
 fn mark_all_read_is_disabled_without_unread_faxes() {
     let mut state = three_faxes();
     state.counts.unread = 0;

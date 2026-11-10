@@ -20,6 +20,8 @@ const NAV_ROW_H: f32 = 36.0;
 const NAV_BAR_W: f32 = 3.0;
 const NAV_GLYPH_W: f32 = 20.0;
 const TOAST_MAX_W: f32 = 520.0;
+/// Longest toast text shown in full; longer messages are cut with an ellipsis.
+const TOAST_MAX_UNITS: usize = 300;
 /// Gap between the bottom of the toast and the window bottom: status bar + 8 px.
 const TOAST_BOTTOM_GAP: f32 = 36.0;
 const DIALOG_W: f32 = 420.0;
@@ -75,8 +77,9 @@ fn page_area(state: &AppState, page: WidgetNode<Msg>) -> WidgetNode<Msg> {
         .key("pagearea")
         .flex_1()
         .flex_shrink(1.0)
-        .min_h(crate::ui::views::kit::px(0.0))
-        .h(crate::ui::views::kit::full());
+        .min_w(kit::px(0.0))
+        .min_h(kit::px(0.0))
+        .h(kit::full());
     if state.new_fax_banner > 0 {
         area = area.child(banner(state));
     }
@@ -84,7 +87,8 @@ fn page_area(state: &AppState, page: WidgetNode<Msg>) -> WidgetNode<Msg> {
         column::<Msg>()
             .flex_1()
             .flex_shrink(1.0)
-            .min_h(crate::ui::views::kit::px(0.0))
+            .min_w(kit::px(0.0))
+            .min_h(kit::px(0.0))
             .child(page)
             .build(),
     )
@@ -396,12 +400,14 @@ fn toast_layer(toast: &Toast) -> WidgetNode<Msg> {
                 .build(),
         )
         .child(
-            label_builder::<Msg>(toast.text.as_str())
+            label_builder::<Msg>(kit::truncate_units(&toast.text, TOAST_MAX_UNITS))
                 .font_size(14.0)
-                .wrap(LabelWrap::Word)
+                // Character wrap so unbroken error text (paths, codes) still wraps.
+                .wrap(LabelWrap::Character)
                 .text_color(ColorToken::Foreground)
                 .flex_1()
                 .flex_shrink(1.0)
+                .min_w(kit::px(0.0))
                 .build(),
         )
         .child(kit::colored(
@@ -412,7 +418,8 @@ fn toast_layer(toast: &Toast) -> WidgetNode<Msg> {
         .build();
     let toast_card = card::<Msg>()
         .variant(CardVariant::Elevated)
-        .max_w(kit::px(TOAST_MAX_W))
+        .w(kit::px(TOAST_MAX_W))
+        .flex_shrink(0.0)
         .child(bar)
         .build();
     column::<Msg>()
@@ -421,8 +428,11 @@ fn toast_layer(toast: &Toast) -> WidgetNode<Msg> {
         .h(crate::ui::views::kit::full())
         .child(kit::spacer())
         .child(
+            // Content-sized: must not shrink below its card, or the spacer above
+            // takes the room and pushes the toast past the window bottom.
             row::<Msg>()
                 .w(crate::ui::views::kit::full())
+                .flex_shrink(0.0)
                 .child(kit::spacer())
                 .child(toast_card)
                 .child(kit::spacer())
@@ -465,6 +475,7 @@ fn dialog_layer(lang: Lang, confirm: &ConfirmDialog) -> WidgetNode<Msg> {
         .child(
             row::<Msg>()
                 .w(crate::ui::views::kit::full())
+                .flex_shrink(0.0)
                 .child(kit::spacer())
                 .child(dialog)
                 .child(kit::spacer())

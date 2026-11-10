@@ -49,8 +49,8 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
         "請先指定要傳送的檔案",
         "Choose a file to send first",
     ),
-    ("send.history_title", "傳送記錄", "Sent history"),
-    ("send.history_empty", "還沒有傳送記錄", "Nothing sent yet"),
+    ("send.history_title", "傳送紀錄", "Sent history"),
+    ("send.history_empty", "還沒有傳送紀錄", "Nothing sent yet"),
     ("send.history_via", "經由 {printer}", "via {printer}"),
     ("send.history_to", "收件人：{recipient}", "To: {recipient}"),
 ];

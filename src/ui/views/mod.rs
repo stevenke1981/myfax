@@ -11,6 +11,9 @@ pub mod settings;
 pub mod shell;
 pub mod stats;
 
+#[cfg(test)]
+mod layout_check;
+
 use crate::app::{AppState, Msg, Route};
 use acme_widgets::WidgetNode;
 

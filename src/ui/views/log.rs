@@ -90,9 +90,11 @@ fn log_row(lang: Lang, entry: &LogEntry) -> WidgetNode<Msg> {
         .child(
             label_builder::<Msg>(entry.message.as_str())
                 .font_size(14.0)
-                .wrap(LabelWrap::Word)
+                // Character wrap: messages may hold unbroken paths or tokens.
+                .wrap(LabelWrap::Character)
                 .flex_1()
                 .flex_shrink(1.0)
+                .min_w(kit::px(0.0))
                 .build(),
         )
         .build()

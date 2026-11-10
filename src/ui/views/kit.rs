@@ -27,6 +27,9 @@ pub const LIST_MIN_W: f32 = 280.0;
 pub const STATUS_H: f32 = 28.0;
 pub const BANNER_H: f32 = 40.0;
 pub const PAGE_PAD: f32 = 24.0;
+const HEADER_H: f32 = 56.0;
+const HEADER_PAD_Y: f32 = 12.0;
+const HEADER_TWO_LINE_PAD_Y: f32 = 1.5;
 pub const PANE_PAD: f32 = 12.0;
 pub const ROW_H: f32 = 56.0;
 pub const CHART_H: f32 = 160.0;
@@ -210,6 +213,12 @@ pub fn page_header(
     subtitle: Option<String>,
     actions: Vec<WidgetNode<Msg>>,
 ) -> WidgetNode<Msg> {
+    // Title + caption (30 + 2 + 21 px) fill the 56 px row; a title alone is centred.
+    let pad_y = if subtitle.is_some() {
+        HEADER_TWO_LINE_PAD_Y
+    } else {
+        HEADER_PAD_Y
+    };
     let mut heading = column::<Msg>().gap(2.0).child(title(title_text));
     if let Some(sub) = subtitle {
         heading = heading.child(caption(&sub));
@@ -222,9 +231,9 @@ pub fn page_header(
         .flex_shrink(0.0)
         .child(
             row::<Msg>()
-                .h(px(56.0))
+                .h(px(HEADER_H))
                 .px(PAGE_PAD)
-                .py(12.0)
+                .py(pad_y)
                 .gap(12.0)
                 .child(heading)
                 .child(spacer())

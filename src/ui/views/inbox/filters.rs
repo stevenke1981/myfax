@@ -13,8 +13,9 @@ use chrono::{Datelike, NaiveDate};
 
 /// Tags shown in the filter column (most used first).
 const TAG_LIMIT: usize = 30;
-/// Width of one date preset chip button.
-const CHIP_W: f32 = 102.0;
+/// Width of one date preset chip button: two chips and their gap fill the 200 px
+/// filter content width (`FILTER_W` minus both `PANE_PAD`s).
+const CHIP_W: f32 = 96.0;
 /// Width of the year chevron button.
 const CHEVRON_W: f32 = 28.0;
 

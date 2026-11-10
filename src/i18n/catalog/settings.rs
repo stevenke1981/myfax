@@ -68,7 +68,7 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     (
         "settings.archive_hint",
         "依「年／年-月／年-月-日」資料夾整理",
-        "Organised as year / year-month / year-month-day folders",
+        "Organized as year / year-month / year-month-day folders",
     ),
     (
         "settings.open_archive",

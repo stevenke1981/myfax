@@ -3,6 +3,7 @@
 use super::test_util::{button_at, find_key, keys, messages, texts};
 use super::*;
 use crate::config::Settings;
+use crate::i18n::{Lang, t};
 use chrono::TimeZone;
 use std::path::PathBuf;
 
@@ -234,4 +235,39 @@ fn archive_path_is_truncated_in_status_bar() {
             .iter()
             .any(|s| s.contains('…') && s.starts_with("封存位置："))
     );
+}
+
+#[test]
+fn reworded_fragments_avoid_placeholder_plurals_and_mainland_nouns() {
+    // Keys whose wording was reviewed (fragments are private to `i18n`).
+    const REVIEWED: [&str; 10] = [
+        "shell.window_title_unread",
+        "shell.status_watching",
+        "shell.banner_new_faxes",
+        "shell.nav_log",
+        "common.pages_short",
+        "log.title",
+        "log.clear",
+        "log.empty",
+        "send.history_title",
+        "settings.archive_hint",
+    ];
+    for key in REVIEWED {
+        let zh = t(Lang::ZhTw, key);
+        let en = t(Lang::En, key);
+        for banned in ["(s)", "(es)", " pg", "Organised"] {
+            assert!(
+                !en.contains(banned),
+                "{key}: English contains {banned:?}: {en}"
+            );
+        }
+        for banned in ["活動記錄", "傳送記錄", "清除記錄", "封未讀"] {
+            assert!(
+                !zh.contains(banned),
+                "{key}: zh-TW contains {banned:?}: {zh}"
+            );
+        }
+    }
+    assert!(t(Lang::ZhTw, "shell.window_title_unread").contains("份未讀"));
+    assert_eq!(t(Lang::En, "send.history_title"), "Sent history");
 }

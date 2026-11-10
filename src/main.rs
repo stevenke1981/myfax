@@ -158,7 +158,15 @@ impl Application for MyFaxApp {
                 x,
                 y,
                 ..
-            } => self.runtime.scroll(delta_x, delta_y, lines, x, y),
+            } => {
+                // Shift + vertical wheel pans horizontally (zoomed preview).
+                let (dx, dy) = if self.modifiers.shift && delta_x == 0.0 {
+                    (delta_y, 0.0)
+                } else {
+                    (delta_x, delta_y)
+                };
+                self.runtime.scroll(dx, dy, lines, x, y)
+            }
             PlatformEvent::Key {
                 key,
                 pressed,

@@ -16,7 +16,7 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     (
         "app.export_done",
         "已匯出 {count} 份傳真到 {folder}，失敗 {failed} 份",
-        "Exported {count} fax(es) to {folder}, {failed} failed",
+        "Export finished: {count} copied to {folder}, {failed} failed",
     ),
     (
         "app.export_file_failed",
@@ -75,12 +75,12 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     (
         "app.marked_all_read",
         "已將 {count} 份傳真標為已讀",
-        "Marked {count} fax(es) as read",
+        "Marked as read: {count}",
     ),
     (
         "app.scan_done",
         "掃描完成：{count} 份新傳真",
-        "Scan finished: {count} new fax(es)",
+        "Scan finished. New faxes: {count}",
     ),
     ("app.settings_saved", "設定已儲存", "Settings saved"),
     (
@@ -179,7 +179,7 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     (
         "app.csv_imported",
         "已匯入 {count} 位聯絡人，略過 {skipped} 位重複聯絡人",
-        "Imported {count} contact(s), skipped {skipped} duplicate(s)",
+        "Contacts imported: {count}, duplicates skipped: {skipped}",
     ),
     (
         "app.csv_export_exists",
@@ -189,7 +189,7 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     (
         "app.csv_exported",
         "已匯出 {count} 位聯絡人到 {path}",
-        "Exported {count} contact(s) to {path}",
+        "Contacts exported: {count} to {path}",
     ),
     (
         "app.csv_no_path",
@@ -239,7 +239,7 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     (
         "app.printers_refreshed",
         "找到 {count} 台印表機",
-        "Found {count} printer(s)",
+        "Printers found: {count}",
     ),
     (
         "app.printers_error",
@@ -302,7 +302,7 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     (
         "app.confirm_empty_body",
         "垃圾桶中的 {count} 份傳真將被永久刪除，無法復原。",
-        "The {count} fax(es) in the trash will be deleted permanently. This cannot be undone.",
+        "All faxes in the trash ({count}) will be deleted permanently. This cannot be undone.",
     ),
     (
         "app.confirm_contact_title",
@@ -316,12 +316,12 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     ),
     (
         "app.confirm_log_title",
-        "清除活動記錄？",
+        "清除活動紀錄？",
         "Clear the activity log?",
     ),
     (
         "app.confirm_log_body",
-        "所有活動記錄都會被刪除，無法復原。",
+        "所有活動紀錄都會被刪除，無法復原。",
         "All log entries will be deleted. This cannot be undone.",
     ),
     // ── activity log lines ──
@@ -339,7 +339,7 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     (
         "app.log_exported",
         "已匯出 {count} 份傳真到 {folder}",
-        "Exported {count} fax(es) to {folder}",
+        "Faxes exported: {count} to {folder}",
     ),
     ("app.log_printed", "已列印：{name}", "Printed: {name}"),
     (
@@ -361,7 +361,7 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     (
         "app.log_trash_purged",
         "已自動清除垃圾桶中逾期的 {count} 份傳真",
-        "Purged {count} expired fax(es) from the trash",
+        "Expired faxes purged from the trash: {count}",
     ),
     ("app.log_settings_saved", "已儲存設定", "Settings saved"),
     (
@@ -377,7 +377,7 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     (
         "app.log_watcher_started",
         "開始監看 {count} 個資料夾",
-        "Watching {count} folder(s)",
+        "Watching folders: {count}",
     ),
     (
         "app.log_watcher_error",
@@ -387,7 +387,7 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     (
         "app.log_scan_manual",
         "手動掃描完成，發現 {count} 份新傳真",
-        "Manual scan finished: {count} new fax(es)",
+        "Manual scan finished. New faxes: {count}",
     ),
     (
         "app.log_contact_saved",
@@ -402,12 +402,12 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     (
         "app.log_csv_imported",
         "已從 CSV 匯入 {count} 位聯絡人",
-        "Imported {count} contact(s) from CSV",
+        "Contacts imported from CSV: {count}",
     ),
     (
         "app.log_csv_exported",
         "已匯出 {count} 位聯絡人到 CSV",
-        "Exported {count} contact(s) to CSV",
+        "Contacts exported to CSV: {count}",
     ),
     (
         "app.log_send_handed",

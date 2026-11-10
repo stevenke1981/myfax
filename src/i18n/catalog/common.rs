@@ -18,5 +18,5 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     ("common.prev", "上一頁", "Previous"),
     ("common.next", "下一頁", "Next"),
     ("common.page_x_of_y", "{page} / {pages}", "{page} / {pages}"),
-    ("common.pages_short", "{pages} 頁", "{pages} pg"),
+    ("common.pages_short", "{pages} 頁", "{pages} pages"),
 ];

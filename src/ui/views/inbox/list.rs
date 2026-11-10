@@ -100,30 +100,41 @@ fn sort_row(state: &AppState) -> WidgetNode<Msg> {
     line.build()
 }
 
-/// Result count on the left; "Empty trash" (Trash with items) or "Mark all read" on the right.
+/// Result count on the left; "Empty trash" in Trash (only when it holds items), otherwise
+/// "Mark all read" on the right. Trash without items shows no action.
 fn meta_row(state: &AppState) -> WidgetNode<Msg> {
     let lang = state.lang;
     let total = state.results.total.to_string();
     let count_text = tf(lang, "inbox.result_count", &[("count", total.as_str())]);
-    let action = if state.query.folder == Folder::Trash && state.counts.trash > 0 {
+    let mut meta = row::<Msg>()
+        .h(kit::px(24.0))
+        .gap(8.0)
+        .child(kit::caption(&count_text))
+        .child(kit::spacer());
+    if let Some(action) = meta_action(state) {
+        meta = meta.child(action);
+    }
+    meta.build()
+}
+
+/// The right-hand action of the meta row, if any.
+fn meta_action(state: &AppState) -> Option<WidgetNode<Msg>> {
+    let lang = state.lang;
+    if state.query.folder != Folder::Trash {
+        return Some(
+            button("btn.mark_all_read", t(lang, "inbox.mark_all_read"))
+                .variant(ButtonVariant::Ghost)
+                .size(ButtonSize::XS)
+                .disabled(state.counts.unread == 0)
+                .on_click(Msg::MarkAllRead),
+        );
+    }
+    (state.counts.trash > 0).then(|| {
         button("btn.empty_trash", t(lang, "inbox.empty_trash_btn"))
             .variant(ButtonVariant::Danger)
             .size(ButtonSize::XS)
             .on_click(Msg::AskEmptyTrash)
-    } else {
-        button("btn.mark_all_read", t(lang, "inbox.mark_all_read"))
-            .variant(ButtonVariant::Ghost)
-            .size(ButtonSize::XS)
-            .disabled(state.counts.unread == 0)
-            .on_click(Msg::MarkAllRead)
-    };
-    row::<Msg>()
-        .h(kit::px(24.0))
-        .gap(8.0)
-        .child(kit::caption(&count_text))
-        .child(kit::spacer())
-        .child(action)
-        .build()
+    })
 }
 
 fn rows_block(state: &AppState) -> WidgetNode<Msg> {
