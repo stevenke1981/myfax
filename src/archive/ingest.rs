@@ -3,7 +3,7 @@
 use crate::archive::filename;
 use crate::config::Settings;
 use crate::i18n::{Lang, t, tf};
-use crate::model::{FaxId, FaxSource, LogLevel, NewFax};
+use crate::model::{FaxId, FaxRecord, FaxSource, LogLevel, NewFax};
 use crate::store::Store;
 use anyhow::{Context, bail};
 use chrono::{DateTime, Local};
@@ -23,8 +23,10 @@ pub enum IngestOutcome {
         id: FaxId,
         archived: PathBuf,
     },
-    /// Same SHA-256 already indexed. The source is removed only when
-    /// `delete_source_after_import` is set; otherwise left untouched.
+    /// Same SHA-256 already indexed with an intact archived copy. The source is
+    /// removed only when `delete_source_after_import` is set and it is not part of
+    /// the archive; otherwise left untouched. A missing or damaged archived copy is
+    /// re-archived instead and reported as `Imported`.
     Duplicate {
         existing: FaxId,
     },
@@ -95,9 +97,10 @@ pub fn ingest_file(
             &[("path", display(path).as_str())],
         )
     })?;
-    if let Some(existing) = store.find_by_hash(&sha256)? {
-        remove_source_if_configured(path, settings, store);
-        return Ok(IngestOutcome::Duplicate { existing });
+    if let Some(existing) = store.find_by_hash(&sha256)?
+        && let Some(outcome) = handle_existing(path, existing, size, settings, store)?
+    {
+        return Ok(outcome);
     }
 
     let name = file_name_text(path);
@@ -131,9 +134,10 @@ pub fn ingest_file(
         Err(err) => {
             remove_quietly(&dest);
             // A concurrent import of the same content wins the UNIQUE(sha256) race.
-            if let Ok(Some(existing)) = store.find_by_hash(&sha256) {
-                remove_source_if_configured(path, settings, store);
-                return Ok(IngestOutcome::Duplicate { existing });
+            if let Ok(Some(existing)) = store.find_by_hash(&sha256)
+                && let Some(outcome) = handle_existing(path, existing, size, settings, store)?
+            {
+                return Ok(outcome);
             }
             return Err(anyhow::Error::from(err).context(tf(
                 lang,
@@ -146,7 +150,7 @@ pub fn ingest_file(
     if let Some(folder) = &settings.forward_copy_folder {
         forward_copy(&dest, folder, settings, store, &name);
     }
-    remove_source_if_configured(path, settings, store);
+    remove_source_if_configured(path, settings, store, None);
     let sender_label = sender_label(
         lang,
         sender_name.as_deref(),
@@ -308,8 +312,85 @@ fn forward_copy(archived: &Path, folder: &Path, settings: &Settings, store: &Sto
     }
 }
 
-fn remove_source_if_configured(path: &Path, settings: &Settings, store: &Store) {
-    if !settings.delete_source_after_import {
+/// Outcome for content already in the index. A missing or wrong-size archived
+/// copy is replaced from the source; an intact one makes the source a plain
+/// duplicate. Returns `None` when the indexed row vanished meanwhile, so the
+/// caller imports the source as a new fax.
+fn handle_existing(
+    path: &Path,
+    existing: FaxId,
+    size: u64,
+    settings: &Settings,
+    store: &Store,
+) -> anyhow::Result<Option<IngestOutcome>> {
+    let Some(record) = store.get_fax(existing)? else {
+        return Ok(None);
+    };
+    if archived_copy_is_intact(&record.file_path, record.file_size) {
+        remove_source_if_configured(path, settings, store, Some(&record.file_path));
+        return Ok(Some(IngestOutcome::Duplicate { existing }));
+    }
+    rearchive(path, existing, &record, size, settings, store).map(Some)
+}
+
+/// Copies `path` to a fresh archive location and points the indexed row at it.
+fn rearchive(
+    path: &Path,
+    existing: FaxId,
+    record: &FaxRecord,
+    size: u64,
+    settings: &Settings,
+    store: &Store,
+) -> anyhow::Result<IngestOutcome> {
+    let lang = settings.language;
+    let dest = archive_path_for(
+        &settings.archive_root,
+        record.received_at,
+        record.sender_number.as_deref(),
+        &extension_lower(path).unwrap_or_default(),
+    );
+    copy_into_archive(path, &dest, size, lang)?;
+    if let Err(err) = store.set_file_path(existing, &dest) {
+        remove_quietly(&dest);
+        return Err(anyhow::Error::from(err).context(tf(
+            lang,
+            "archive.err_index",
+            &[("path", display(&dest).as_str())],
+        )));
+    }
+    log_line(
+        store,
+        LogLevel::Warn,
+        &tf(
+            lang,
+            "archive.log_rearchived",
+            &[
+                ("name", file_name_text(path).as_str()),
+                ("path", display(&dest).as_str()),
+            ],
+        ),
+    );
+    // The indexed copy is the one the source is compared against, not the new one.
+    remove_source_if_configured(path, settings, store, Some(&record.file_path));
+    Ok(IngestOutcome::Imported {
+        id: existing,
+        archived: dest,
+    })
+}
+
+/// True when the indexed copy is a regular file of the size the index recorded.
+fn archived_copy_is_intact(path: &Path, expected_size: u64) -> bool {
+    std::fs::metadata(path).is_ok_and(|meta| meta.is_file() && meta.len() == expected_size)
+}
+
+/// Deletes the source only when configured and when it is not part of the archive.
+fn remove_source_if_configured(
+    path: &Path,
+    settings: &Settings,
+    store: &Store,
+    indexed_copy: Option<&Path>,
+) {
+    if !settings.delete_source_after_import || is_archive_material(path, settings, indexed_copy) {
         return;
     }
     if let Err(err) = std::fs::remove_file(path) {
@@ -325,6 +406,30 @@ fn remove_source_if_configured(path: &Path, settings: &Settings, store: &Store) 
                 ],
             ),
         );
+    }
+}
+
+/// True when deleting `path` could destroy an archived fax: it is the indexed copy
+/// itself, or it lies inside the archive root.
+fn is_archive_material(path: &Path, settings: &Settings, indexed_copy: Option<&Path>) -> bool {
+    let source = comparable_path(path);
+    if indexed_copy.is_some_and(|copy| comparable_path(copy) == source) {
+        return true;
+    }
+    source.starts_with(comparable_path(&settings.archive_root))
+}
+
+/// Canonical form for comparisons, falling back to the raw path when it cannot be
+/// resolved. The Windows verbatim prefix is dropped and the text lower-cased, since
+/// Windows paths are case-insensitive.
+fn comparable_path(path: &Path) -> PathBuf {
+    let resolved = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    let text: String = resolved.to_string_lossy().into_owned();
+    let trimmed = text.strip_prefix(r"\\?\").unwrap_or(&text);
+    if cfg!(windows) {
+        PathBuf::from(trimmed.to_lowercase())
+    } else {
+        PathBuf::from(trimmed)
     }
 }
 
@@ -709,5 +814,124 @@ mod tests {
             panic!("expected Imported");
         };
         assert!(archived.ends_with("20261110-103045_0912345678.tiff"));
+    }
+
+    fn delete_settings(dir: &Path) -> Settings {
+        Settings {
+            delete_source_after_import: true,
+            ..settings_in(dir)
+        }
+    }
+
+    fn import_first(dir: &Path, store: &Store, bytes: &[u8]) -> (FaxId, PathBuf) {
+        let src = write(dir, "FAX_20261110_103045_0912345678.pdf", bytes);
+        let outcome = ingest_file(&src, FaxSource::WatchFolder, &settings_in(dir), store).unwrap();
+        let IngestOutcome::Imported { id, archived } = outcome else {
+            panic!("expected Imported, got {outcome:?}");
+        };
+        (id, archived)
+    }
+
+    #[test]
+    fn reimporting_the_archived_copy_with_delete_flag_keeps_it() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let bytes = pdf_bytes(1);
+        let (_, archived) = import_first(dir.path(), &store, &bytes);
+
+        let outcome = ingest_file(
+            &archived,
+            FaxSource::WatchFolder,
+            &delete_settings(dir.path()),
+            &store,
+        )
+        .unwrap();
+        assert!(matches!(outcome, IngestOutcome::Duplicate { .. }));
+        assert_eq!(
+            std::fs::read(&archived).unwrap(),
+            bytes,
+            "archive copy must survive"
+        );
+    }
+
+    #[test]
+    fn duplicate_inside_archive_root_is_not_deleted() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let bytes = pdf_bytes(1);
+        import_first(dir.path(), &store, &bytes);
+        let manual = dir.path().join("archive").join("manual");
+        std::fs::create_dir_all(&manual).unwrap();
+        let stray = write(&manual, "copy.pdf", &bytes);
+
+        let outcome = ingest_file(
+            &stray,
+            FaxSource::WatchFolder,
+            &delete_settings(dir.path()),
+            &store,
+        )
+        .unwrap();
+        assert!(matches!(outcome, IngestOutcome::Duplicate { .. }));
+        assert!(stray.exists(), "file inside archive root must be kept");
+    }
+
+    #[test]
+    fn duplicate_with_missing_archive_copy_is_rearchived() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let bytes = pdf_bytes(1);
+        let (id, archived) = import_first(dir.path(), &store, &bytes);
+        std::fs::remove_file(&archived).unwrap();
+        let again = write(dir.path(), "again.pdf", &bytes);
+
+        let outcome = ingest_file(
+            &again,
+            FaxSource::WatchFolder,
+            &delete_settings(dir.path()),
+            &store,
+        )
+        .unwrap();
+        let IngestOutcome::Imported {
+            id: restored_id,
+            archived: new_path,
+        } = outcome
+        else {
+            panic!("expected Imported, got {outcome:?}");
+        };
+        assert_eq!(restored_id, id);
+        assert_eq!(std::fs::read(&new_path).unwrap(), bytes);
+        assert_eq!(store.get_fax(id).unwrap().unwrap().file_path, new_path);
+        assert!(!again.exists(), "source removed after re-archiving");
+        let logs = store.recent_logs(10).unwrap();
+        assert!(logs.iter().any(|log| log.level == LogLevel::Warn));
+    }
+
+    #[test]
+    fn duplicate_with_truncated_archive_copy_is_rearchived() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = Store::open_in_memory().unwrap();
+        let bytes = pdf_bytes(1);
+        let (id, archived) = import_first(dir.path(), &store, &bytes);
+        std::fs::write(&archived, b"x").unwrap();
+        let again = write(dir.path(), "again.pdf", &bytes);
+
+        let outcome = ingest_file(
+            &again,
+            FaxSource::WatchFolder,
+            &settings_in(dir.path()),
+            &store,
+        )
+        .unwrap();
+        let IngestOutcome::Imported {
+            id: restored_id,
+            archived: new_path,
+        } = outcome
+        else {
+            panic!("expected Imported, got {outcome:?}");
+        };
+        assert_eq!(restored_id, id);
+        assert_ne!(new_path, archived, "damaged copy is not reused");
+        assert_eq!(std::fs::read(&new_path).unwrap(), bytes);
+        assert_eq!(store.get_fax(id).unwrap().unwrap().file_path, new_path);
     }
 }

@@ -33,8 +33,9 @@ pub enum PreviewError {
 
 /// Longest accepted side of a decoded page bitmap, in pixels.
 const MAX_SIDE_PX: u32 = 20_000;
-/// Largest accepted decoded page area, in pixels (about 400 MB as RGBA8).
-const MAX_PIXELS: u64 = 100_000_000;
+/// Largest accepted decoded page area, in pixels. A 600 dpi A4 fax page is about
+/// 35 MP, so 40 MP covers real fax pages; as RGBA8 it is about 160 MB.
+const MAX_PIXELS: u64 = 40_000_000;
 
 /// Document container recognised from its magic bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

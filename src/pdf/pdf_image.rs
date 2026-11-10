@@ -16,6 +16,8 @@ const DEFAULT_CCITT_COLUMNS: i64 = 1728;
 /// Largest accepted `Colors` and `Columns` values in predictor parameters.
 const MAX_PREDICTOR_COLORS: usize = 4;
 const MAX_PREDICTOR_COLUMNS: usize = 65_535;
+/// Largest decoded image accepted, in bytes: `MAX_PIXELS` at four bytes per pixel.
+const MAX_DECODED_BYTES: u64 = super::MAX_PIXELS * 4;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum FilterKind {
@@ -38,6 +40,12 @@ pub(super) fn decode_image(
     let width = dimension(document, dict, "Width")?;
     let height = dimension(document, dict, "Height")?;
     raster::check_dims(width, height)?;
+    let decoded = decoded_bound(document, dict, width, height);
+    if decoded > MAX_DECODED_BYTES {
+        return Err(unsupported(format!(
+            "image decoded size {decoded} bytes exceeds the limit"
+        )));
+    }
     let is_mask = get_bool(document, dict, b"ImageMask").unwrap_or(false);
     let stages = filter_stages(document, dict)?;
 
@@ -47,7 +55,9 @@ pub(super) fn decode_image(
         let is_last = index + 1 == stages.len();
         match stage.kind {
             FilterKind::Flate => {
-                data = Cow::Owned(undo_predictor(inflate(&data)?, document, stage.parms)?);
+                // One extra byte per row for a PNG predictor tag.
+                let inflated = inflate(&data, decoded.saturating_add(u64::from(height)))?;
+                data = Cow::Owned(undo_predictor(inflated, document, stage.parms)?);
             }
             FilterKind::Dct => {
                 require_last(is_last)?;
@@ -136,15 +146,41 @@ fn filter_kind(name: &[u8]) -> Result<FilterKind, PreviewError> {
     }
 }
 
+/// Upper bound on the decoded sample bytes, from the dictionary alone: four colour
+/// components at the declared bit depth. Saturates instead of overflowing on hostile
+/// values.
+fn decoded_bound(document: &Document, dict: &Dictionary, width: u32, height: u32) -> u64 {
+    let bits = get_i64(document, dict, b"BitsPerComponent")
+        .unwrap_or(8)
+        .max(1)
+        .unsigned_abs();
+    u64::from(width)
+        .saturating_mul(4)
+        .saturating_mul(bits)
+        .div_ceil(8)
+        .saturating_mul(u64::from(height))
+}
+
 /// Zlib-inflates `data` using lopdf's decompressor on a synthetic stream
 /// without DecodeParms, so predictors are applied by [`undo_predictor`] only.
-fn inflate(data: &[u8]) -> Result<Vec<u8>, PreviewError> {
+///
+/// lopdf offers no bounded inflate, so the output cannot be capped while it is being
+/// produced. The length is checked right after, which rejects oversized output before
+/// any further copy or decode, but it does not bound the memory used during inflation.
+fn inflate(data: &[u8], max_bytes: u64) -> Result<Vec<u8>, PreviewError> {
     let mut dict = Dictionary::new();
     dict.set("Filter", Object::Name(b"FlateDecode".to_vec()));
     let stream = Stream::new(dict, data.to_vec());
-    stream
+    let inflated = stream
         .decompressed_content()
-        .map_err(|err| unsupported(format!("Flate data: {err}")))
+        .map_err(|err| unsupported(format!("Flate data: {err}")))?;
+    if u64::try_from(inflated.len()).is_ok_and(|len| len <= max_bytes) {
+        Ok(inflated)
+    } else {
+        Err(unsupported(format!(
+            "inflated size exceeds the {max_bytes} bytes the image declares"
+        )))
+    }
 }
 
 fn undo_predictor(

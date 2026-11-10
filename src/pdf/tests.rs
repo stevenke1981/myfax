@@ -499,3 +499,55 @@ fn tiff_directory_loop_is_rejected() {
     let path = write_file(dir.path(), "loop.tif", &bytes);
     assert!(is_unsupported(&page_count(&path).expect_err("loop")));
 }
+
+#[test]
+fn image_above_forty_megapixels_is_rejected_before_decoding() {
+    // 7000 x 6000 is 42 MP: inside the old 100 MP limit, outside the 40 MP limit.
+    let stream = gray_image(7000, 6000, vec![], vec![0; 16]);
+    let dir = temp_dir();
+    let path = write_file(
+        dir.path(),
+        "wide.pdf",
+        &build_pdf(vec![Some(stream)], false),
+    );
+    let error = render_page(&path, 0, 100).expect_err("rejected");
+    assert!(error.to_string().contains("pixel limit"), "{error}");
+}
+
+#[test]
+fn flate_image_with_oversized_declared_samples_is_rejected_before_inflating() {
+    // 6000 x 6000 at 16 bits per RGB sample is about 288 MB decoded, above the 160 MB ceiling.
+    let mut stream = image_stream(
+        6000,
+        6000,
+        vec![
+            ("ColorSpace", name("DeviceRGB")),
+            ("BitsPerComponent", 16.into()),
+        ],
+        vec![0; 64],
+    );
+    stream.compress().expect("compresses");
+    let dir = temp_dir();
+    let path = write_file(
+        dir.path(),
+        "deep.pdf",
+        &build_pdf(vec![Some(stream)], false),
+    );
+    let error = render_page(&path, 0, 100).expect_err("rejected");
+    assert!(error.to_string().contains("decoded size"), "{error}");
+}
+
+#[test]
+fn flate_data_longer_than_the_declared_image_is_rejected() {
+    // A 10 x 10 gray image needs 100 bytes; the stream inflates to 2 MB of padding.
+    let mut stream = gray_image(10, 10, vec![], vec![0; 2_000_000]);
+    stream.compress().expect("compresses");
+    let dir = temp_dir();
+    let path = write_file(
+        dir.path(),
+        "padded.pdf",
+        &build_pdf(vec![Some(stream)], false),
+    );
+    let error = render_page(&path, 0, 100).expect_err("rejected");
+    assert!(error.to_string().contains("inflated size"), "{error}");
+}

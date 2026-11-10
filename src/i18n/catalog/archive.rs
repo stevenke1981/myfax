@@ -21,6 +21,11 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
         "無法讀取頁數，已以 0 頁歸檔（{name}）",
         "Page count unreadable; archived as 0 pages ({name})",
     ),
+    (
+        "archive.log_rearchived",
+        "已保存的傳真副本遺失或損毀，已重新歸檔（{name}）：{path}",
+        "Archived copy was missing or damaged; re-archived ({name}): {path}",
+    ),
     ("archive.unknown_sender", "未知寄件者", "Unknown sender"),
     (
         "archive.err_read",

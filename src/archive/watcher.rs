@@ -142,7 +142,7 @@ fn run(settings: Settings, db_path: PathBuf, thread: Thread) {
         }
     };
     let interval = Duration::from_secs(settings.poll_interval_secs);
-    let mut poller = Poller::default();
+    let mut poller = Poller::new(Arc::clone(&thread.stop));
     loop {
         if thread.stop.load(Ordering::SeqCst) {
             break;
