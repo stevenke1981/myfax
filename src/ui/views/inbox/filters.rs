@@ -48,7 +48,7 @@ pub(super) fn filter_column(state: &AppState) -> WidgetNode<Msg> {
         .build();
     column::<Msg>()
         .w(kit::px(FILTER_W))
-        .h_full()
+        .h(crate::ui::views::kit::full())
         .bg(ColorToken::Surface)
         .child(header)
         .child(kit::hdivider())
@@ -93,7 +93,7 @@ fn folders_block(state: &AppState) -> WidgetNode<Msg> {
         let count = folder_count(&state.counts, folder).to_string();
         let content = row::<Msg>()
             .flex_1()
-            .h_full()
+            .h(crate::ui::views::kit::full())
             .px(8.0)
             .gap(8.0)
             .child(text_builder(folder_name(lang, folder), 14.0, false, ink(active)).build())
@@ -165,14 +165,14 @@ fn date_block(state: &AppState) -> WidgetNode<Msg> {
             text_input(Field::DateFrom.key())
                 .placeholder(t(lang, "inbox.date_from_ph"))
                 .value(state.field(Field::DateFrom))
-                .w_full()
+                .w(crate::ui::views::kit::full())
                 .build(),
         )
         .child(
             text_input(Field::DateTo.key())
                 .placeholder(t(lang, "inbox.date_to_ph"))
                 .value(state.field(Field::DateTo))
-                .w_full()
+                .w(crate::ui::views::kit::full())
                 .build(),
         )
         .child(
@@ -252,7 +252,7 @@ fn year_block(state: &AppState, node: &YearNode) -> WidgetNode<Msg> {
         .on_click(Msg::ToggleYear(node.year));
     let content = row::<Msg>()
         .flex_1()
-        .h_full()
+        .h(crate::ui::views::kit::full())
         .px(8.0)
         .gap(8.0)
         .child(text_builder(&node.year.to_string(), 14.0, true, ink(active)).build())
@@ -288,7 +288,7 @@ fn month_block(state: &AppState, year: i32, month: &MonthNode) -> WidgetNode<Msg
     let active = month_active(&state.query, year, month.month);
     let content = row::<Msg>()
         .flex_1()
-        .h_full()
+        .h(crate::ui::views::kit::full())
         .pl(24.0)
         .pr(8.0)
         .gap(8.0)
@@ -316,7 +316,7 @@ fn day_row(state: &AppState, date: NaiveDate, count: u64) -> WidgetNode<Msg> {
     let active = day_active(&state.query, date);
     let content = row::<Msg>()
         .flex_1()
-        .h_full()
+        .h(crate::ui::views::kit::full())
         .pl(44.0)
         .pr(8.0)
         .gap(8.0)

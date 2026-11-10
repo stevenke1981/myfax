@@ -48,7 +48,7 @@ fn list_column(state: &AppState) -> WidgetNode<Msg> {
     column::<Msg>()
         .flex_1()
         .min_w(px(LIST_MIN_W))
-        .h_full()
+        .h(crate::ui::views::kit::full())
         .bg(ColorToken::Background)
         .child(search_bar(state))
         .child(kit::hdivider())
@@ -99,7 +99,9 @@ fn contact_list(state: &AppState) -> WidgetNode<Msg> {
 
 /// One clickable contact row: bar, name + detail caption, quick "send" button.
 fn contact_row(lang: Lang, contact: &Contact, selected: bool) -> WidgetNode<Msg> {
-    let mut bar = column::<Msg>().w(px(BAR_W)).h_full();
+    let mut bar = column::<Msg>()
+        .w(px(BAR_W))
+        .h(crate::ui::views::kit::full());
     let mut line = row::<Msg>()
         .key(format!("row.contact.{}", contact.id))
         .h(px(ROW_H))
@@ -173,7 +175,7 @@ fn editor_column(state: &AppState) -> WidgetNode<Msg> {
     column::<Msg>()
         .key("contacteditor")
         .w(px(EDITOR_W))
-        .h_full()
+        .h(crate::ui::views::kit::full())
         .bg(ColorToken::Surface)
         .child(body)
         .build()

@@ -96,7 +96,7 @@ fn general_card(state: &AppState) -> WidgetNode<Msg> {
         .variant(CardVariant::Outlined)
         .padding(16.0)
         .gap(12.0)
-        .w_full()
+        .w(crate::ui::views::kit::full())
         .child(kit::section(t(lang, "settings.section_general")))
         .child(kit::caption(t(lang, "settings.language")))
         .child(languages.build())
@@ -115,7 +115,7 @@ fn receive_card(state: &AppState) -> WidgetNode<Msg> {
         .variant(CardVariant::Outlined)
         .padding(16.0)
         .gap(12.0)
-        .w_full()
+        .w(crate::ui::views::kit::full())
         .child(kit::section(t(lang, "settings.section_receive")))
         .child(kit::caption(t(lang, "settings.watch_folders")));
     if folders.is_empty() {
@@ -290,7 +290,7 @@ fn storage_card(state: &AppState) -> WidgetNode<Msg> {
         .variant(CardVariant::Outlined)
         .padding(16.0)
         .gap(12.0)
-        .w_full()
+        .w(crate::ui::views::kit::full())
         .child(kit::section(t(lang, "settings.section_storage")))
         .child(archive_field)
         .child(number_field(
@@ -318,7 +318,7 @@ fn help_card(lang: Lang) -> WidgetNode<Msg> {
         .variant(CardVariant::Outlined)
         .padding(16.0)
         .gap(8.0)
-        .w_full()
+        .w(crate::ui::views::kit::full())
         .bg(ColorToken::InfoSoft)
         .child(kit::section(t(lang, "settings.help_title")))
         .child(kit::caption_wrap(t(lang, "settings.help_intro")))

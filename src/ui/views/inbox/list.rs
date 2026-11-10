@@ -27,7 +27,7 @@ pub(super) fn list_column(state: &AppState) -> WidgetNode<Msg> {
     column::<Msg>()
         .flex_1()
         .min_w(kit::px(LIST_MIN_W))
-        .h_full()
+        .h(crate::ui::views::kit::full())
         .bg(ColorToken::Background)
         .child(toolbar(state))
         .child(kit::hdivider())
@@ -44,7 +44,7 @@ fn toolbar(state: &AppState) -> WidgetNode<Msg> {
     let search = text_input(Field::Search.key())
         .placeholder(t(lang, "inbox.search_ph"))
         .value(state.field(Field::Search))
-        .w_full()
+        .w(crate::ui::views::kit::full())
         .build();
     column::<Msg>()
         .p(PANE_PAD)

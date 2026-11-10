@@ -10,6 +10,9 @@ use acme_theme::ThemeColor;
 
 const ELLIPSIS: &str = "\u{2026}";
 
+/// Tolerance (logical px) before a single-line label is ellipsised.
+const FIT_SLACK: f32 = 1.0;
+
 pub(super) fn text_style(font_size: f32, line_height: f32) -> TextStyle {
     TextStyle {
         font_size,
@@ -38,7 +41,10 @@ pub(super) fn fit_line(
     scale: f32,
 ) -> TextLayout {
     let full = shape(fonts, text, style, None, TextWrap::None, scale);
-    if full.width <= max_width || text.is_empty() {
+    // Layout measurement and paint shaping can differ by sub-pixel amounts
+    // (hinting at the device scale); a label laid out at exactly its measured
+    // width must not be ellipsised.
+    if full.width <= max_width + FIT_SLACK || text.is_empty() {
         return full;
     }
     let starts: Vec<usize> = text.char_indices().map(|(index, _)| index).collect();

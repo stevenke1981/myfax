@@ -28,7 +28,7 @@ pub fn pane(state: &AppState) -> WidgetNode<Msg> {
     let lang = state.lang;
     let base = column::<Msg>()
         .w(kit::px(DETAIL_W))
-        .h_full()
+        .h(crate::ui::views::kit::full())
         .bg(ColorToken::Surface);
     let Some(fax) = state.selected.as_ref() else {
         return base
@@ -271,7 +271,7 @@ fn edit_card(state: &AppState, fax: &FaxRecord) -> WidgetNode<Msg> {
             t(lang, "detail.label_tags"),
             text_input(Field::FaxTags.key())
                 .value(state.field(Field::FaxTags))
-                .w_full()
+                .w(crate::ui::views::kit::full())
                 .build(),
         ))
         .child(kit::caption(t(lang, "detail.tags_hint")))
@@ -294,7 +294,7 @@ fn edit_card(state: &AppState, fax: &FaxRecord) -> WidgetNode<Msg> {
             t(lang, "detail.label_sender"),
             text_input(Field::FaxSenderName.key())
                 .value(state.field(Field::FaxSenderName))
-                .w_full()
+                .w(crate::ui::views::kit::full())
                 .build(),
         ))
         .child(tags)
@@ -302,7 +302,7 @@ fn edit_card(state: &AppState, fax: &FaxRecord) -> WidgetNode<Msg> {
             t(lang, "detail.label_note"),
             text_input(Field::FaxNote.key())
                 .value(state.field(Field::FaxNote))
-                .w_full()
+                .w(crate::ui::views::kit::full())
                 .build(),
         ))
         .child(save)
@@ -464,7 +464,7 @@ fn ready_view(state: &AppState) -> WidgetNode<Msg> {
         .build();
     let viewport = column::<Msg>()
         .key("scroll.preview")
-        .w_full()
+        .w(crate::ui::views::kit::full())
         .h(kit::px(preview_viewport_h(slot_h)))
         .overflow_scroll()
         .bg(ColorToken::Muted)

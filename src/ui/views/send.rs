@@ -103,7 +103,9 @@ fn printer_section(state: &AppState, printers: &[String]) -> WidgetNode<Msg> {
 fn printer_row(state: &AppState, index: usize, name: &str) -> WidgetNode<Msg> {
     let lang = state.lang;
     let selected = state.selected_printer.as_deref() == Some(name);
-    let mut bar = column::<Msg>().w(px(BAR_W)).h_full();
+    let mut bar = column::<Msg>()
+        .w(px(BAR_W))
+        .h(crate::ui::views::kit::full());
     let mut line = row::<Msg>()
         .key(format!("printer.{index}"))
         .h(px(PRINTER_ROW_H))

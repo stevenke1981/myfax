@@ -84,8 +84,15 @@ impl Settings {
     }
 }
 
+/// Environment variable that overrides the data directory (portable / test use).
+pub const DATA_DIR_ENV: &str = "MYFAX_DATA_DIR";
+
 /// `%APPDATA%\MyFax` (or the platform equivalent); created on demand by callers.
+/// A non-empty `MYFAX_DATA_DIR` environment variable takes precedence.
 pub fn app_data_dir() -> PathBuf {
+    if let Some(dir) = std::env::var_os(DATA_DIR_ENV).filter(|v| !v.is_empty()) {
+        return PathBuf::from(dir);
+    }
     dirs::config_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join("MyFax")

@@ -8,6 +8,13 @@ use acme_widgets::style::{ColorToken, FontWeight};
 use acme_widgets::{LabelWrap, WidgetNode, column, label_builder, row, separator};
 use chrono::{DateTime, Local};
 
+/// 100 % length. Use this instead of `Styled::w_full()` / `h_full()`: at the
+/// pinned AcmeUI revision those pass `Percent(100.0)` straight to Taffy, which
+/// expects a 0..=1 fraction, so they size nodes at 100× their parent.
+pub fn full() -> Length {
+    Length::Percent(1.0)
+}
+
 /// Pixel length for `Styled::w`/`h`/`min_w`/`max_w` (they take `Length`, not `f32`).
 pub fn px(value: f32) -> Length {
     Length::px(value)
@@ -49,15 +56,17 @@ pub fn tone_tokens(tone: Tone) -> (ColorToken, ColorToken) {
     }
 }
 
-/// Text glyphs used as icons (no icon font).
+/// Text glyphs used as icons (no icon font). Avoid code points with an emoji
+/// presentation (U+2611, U+2699, U+2709, U+263A): Windows draws them from the
+/// colour emoji font, which the glyph atlas renders as a solid block.
 pub mod glyph {
     pub const STAR: &str = "★";
     pub const STAR_OFF: &str = "☆";
     pub const DOT: &str = "●";
     pub const RING: &str = "○";
     pub const RADIO_ON: &str = "◉";
-    pub const CHECK_ON: &str = "☑";
-    pub const CHECK_OFF: &str = "☐";
+    pub const CHECK_ON: &str = "✓";
+    pub const CHECK_OFF: &str = "○";
     pub const CHEVRON_RIGHT: &str = "▸";
     pub const CHEVRON_DOWN: &str = "▾";
     pub const PREV: &str = "‹";
@@ -66,12 +75,12 @@ pub mod glyph {
     pub const OK: &str = "✓";
     pub const MINUS: &str = "−";
     pub const PLUS: &str = "+";
-    pub const NAV_INBOX: &str = "✉";
-    pub const NAV_CONTACTS: &str = "☺";
+    pub const NAV_INBOX: &str = "▤";
+    pub const NAV_CONTACTS: &str = "◎";
     pub const NAV_SEND: &str = "➤";
     pub const NAV_STATS: &str = "▥";
     pub const NAV_LOG: &str = "≡";
-    pub const NAV_SETTINGS: &str = "⚙";
+    pub const NAV_SETTINGS: &str = "✱";
     pub const WARN: &str = "!";
     pub const INFO: &str = "i";
 }
@@ -171,7 +180,7 @@ pub fn vgap(w: f32) -> WidgetNode<Msg> {
 pub fn vdivider() -> WidgetNode<Msg> {
     column::<Msg>()
         .w(px(1.0))
-        .h_full()
+        .h(full())
         .bg(ColorToken::Border)
         .build()
 }

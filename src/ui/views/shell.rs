@@ -32,8 +32,8 @@ pub fn frame(state: &AppState, page: WidgetNode<Msg>) -> WidgetNode<Msg> {
     let now = Local::now();
     let mut layers = stack::<Msg>()
         .key("root")
-        .w_full()
-        .h_full()
+        .w(crate::ui::views::kit::full())
+        .h(crate::ui::views::kit::full())
         .child(shell(state, page, now));
     if let Some(toast) = &state.toast {
         layers = layers.child(toast_layer(toast));
@@ -49,8 +49,8 @@ pub fn frame(state: &AppState, page: WidgetNode<Msg>) -> WidgetNode<Msg> {
 fn shell(state: &AppState, page: WidgetNode<Msg>, now: DateTime<Local>) -> WidgetNode<Msg> {
     column::<Msg>()
         .key("shell")
-        .w_full()
-        .h_full()
+        .w(crate::ui::views::kit::full())
+        .h(crate::ui::views::kit::full())
         .bg(ColorToken::Background)
         .child(body(state, page))
         .child(kit::hdivider())
@@ -69,7 +69,10 @@ fn body(state: &AppState, page: WidgetNode<Msg>) -> WidgetNode<Msg> {
 }
 
 fn page_area(state: &AppState, page: WidgetNode<Msg>) -> WidgetNode<Msg> {
-    let mut area = column::<Msg>().key("pagearea").flex_1().h_full();
+    let mut area = column::<Msg>()
+        .key("pagearea")
+        .flex_1()
+        .h(crate::ui::views::kit::full());
     if state.new_fax_banner > 0 {
         area = area.child(banner(state));
     }
@@ -83,7 +86,7 @@ fn nav_rail(state: &AppState) -> WidgetNode<Msg> {
     let mut rail = column::<Msg>()
         .key("nav")
         .w(kit::px(kit::NAV_W))
-        .h_full()
+        .h(crate::ui::views::kit::full())
         .bg(ColorToken::Surface)
         .padding(8.0)
         .gap(4.0)
@@ -399,12 +402,12 @@ fn toast_layer(toast: &Toast) -> WidgetNode<Msg> {
         .build();
     column::<Msg>()
         .key("toast_layer")
-        .w_full()
-        .h_full()
+        .w(crate::ui::views::kit::full())
+        .h(crate::ui::views::kit::full())
         .child(kit::spacer())
         .child(
             row::<Msg>()
-                .w_full()
+                .w(crate::ui::views::kit::full())
                 .child(kit::spacer())
                 .child(toast_card)
                 .child(kit::spacer())
@@ -420,8 +423,8 @@ fn toast_layer(toast: &Toast) -> WidgetNode<Msg> {
 fn scrim() -> WidgetNode<Msg> {
     column::<Msg>()
         .key("modal:scrim")
-        .w_full()
-        .h_full()
+        .w(crate::ui::views::kit::full())
+        .h(crate::ui::views::kit::full())
         .bg(ColorToken::Foreground)
         .opacity(SCRIM_OPACITY)
         .build()
@@ -441,12 +444,12 @@ fn dialog_layer(lang: Lang, confirm: &ConfirmDialog) -> WidgetNode<Msg> {
         .build();
     column::<Msg>()
         .key("modal:dialog_layer")
-        .w_full()
-        .h_full()
+        .w(crate::ui::views::kit::full())
+        .h(crate::ui::views::kit::full())
         .child(kit::spacer())
         .child(
             row::<Msg>()
-                .w_full()
+                .w(crate::ui::views::kit::full())
                 .child(kit::spacer())
                 .child(dialog)
                 .child(kit::spacer())

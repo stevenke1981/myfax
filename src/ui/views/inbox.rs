@@ -23,7 +23,7 @@ use acme_widgets::{
 pub fn view(state: &AppState) -> WidgetNode<Msg> {
     row::<Msg>()
         .flex_1()
-        .h_full()
+        .h(crate::ui::views::kit::full())
         .child(filters::filter_column(state))
         .child(kit::vdivider())
         .child(list::list_column(state))
@@ -84,7 +84,10 @@ fn select_row(
     msg: Msg,
     content: WidgetNode<Msg>,
 ) -> ContainerBuilder<Msg> {
-    let bar = column::<Msg>().w(kit::px(3.0)).h_full().rounded_full();
+    let bar = column::<Msg>()
+        .w(kit::px(3.0))
+        .h(crate::ui::views::kit::full())
+        .rounded_full();
     let bar = if active {
         bar.bg(ColorToken::Primary)
     } else {
