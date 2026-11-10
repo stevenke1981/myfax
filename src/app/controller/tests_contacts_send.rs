@@ -134,7 +134,105 @@ fn csv_export_to_a_folder_and_import_back_round_trips() {
     assert_eq!(target.controller.state.contacts.len(), 2);
     assert_eq!(
         target.toast_text(),
-        tf(Lang::ZhTw, "app.csv_imported", &[("count", "2")])
+        tf(
+            Lang::ZhTw,
+            "app.csv_imported",
+            &[("count", "2"), ("skipped", "0")]
+        )
+    );
+}
+
+#[test]
+fn csv_export_refuses_to_overwrite_an_existing_file() {
+    let mut h = Harness::new();
+    save_contact(&mut h, "王小明", "0223456789");
+    let file = h.write("out/contacts.csv", b"keep me");
+    h.controller
+        .set_field(Field::CsvPath, file.display().to_string());
+    h.controller.update(Msg::ExportContactsCsv);
+    assert_eq!(h.toast().map(|(kind, _)| kind), Some(ToastKind::Error));
+    assert_eq!(
+        h.toast_text(),
+        tf(
+            Lang::ZhTw,
+            "app.csv_export_exists",
+            &[("path", &file.display().to_string())]
+        )
+    );
+    assert_eq!(std::fs::read(&file).expect("file kept"), b"keep me");
+}
+
+#[test]
+fn csv_export_to_a_folder_never_overwrites_and_picks_an_unused_name() {
+    let mut h = Harness::new();
+    save_contact(&mut h, "王小明", "0223456789");
+    let folder = h.path("out");
+    std::fs::create_dir_all(&folder).expect("mkdir");
+    std::fs::write(folder.join("contacts.csv"), b"old").expect("seed");
+    std::fs::write(folder.join("contacts (2).csv"), b"older").expect("seed");
+    h.controller
+        .set_field(Field::CsvPath, folder.display().to_string());
+    h.controller.update(Msg::ExportContactsCsv);
+    assert_eq!(
+        std::fs::read(folder.join("contacts.csv")).expect("kept"),
+        b"old"
+    );
+    assert_eq!(
+        std::fs::read(folder.join("contacts (2).csv")).expect("kept"),
+        b"older"
+    );
+    assert!(
+        folder.join("contacts (3).csv").is_file(),
+        "next free name used"
+    );
+    assert_eq!(h.toast().map(|(kind, _)| kind), Some(ToastKind::Success));
+}
+
+#[test]
+fn csv_reimport_skips_contacts_already_present_by_name_and_number() {
+    let mut h = Harness::new();
+    let file = h.write(
+        "in.csv",
+        "name,fax
+Alice,02-2345-6789
+Bob,
+"
+        .as_bytes(),
+    );
+    h.controller
+        .set_field(Field::CsvPath, file.display().to_string());
+    h.controller.update(Msg::ImportContactsCsv);
+    assert_eq!(h.controller.state.contacts.len(), 2);
+
+    h.controller.update(Msg::ImportContactsCsv);
+    assert_eq!(
+        h.controller.state.contacts.len(),
+        2,
+        "re-import of contacts without a number adds nothing"
+    );
+    assert_eq!(
+        h.toast_text(),
+        tf(
+            Lang::ZhTw,
+            "app.csv_imported",
+            &[("count", "0"), ("skipped", "2")]
+        )
+    );
+
+    let same_name_other_number = h.write(
+        "other.csv",
+        "name,fax
+alice,0987654321
+"
+        .as_bytes(),
+    );
+    h.controller
+        .set_field(Field::CsvPath, same_name_other_number.display().to_string());
+    h.controller.update(Msg::ImportContactsCsv);
+    assert_eq!(
+        h.controller.state.contacts.len(),
+        3,
+        "same name with a different number is a new contact"
     );
 }
 

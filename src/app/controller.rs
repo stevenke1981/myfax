@@ -12,6 +12,7 @@ mod date_tree;
 mod fax_actions;
 mod feedback;
 mod fields;
+mod folders;
 mod import;
 mod inbox;
 mod nav;
@@ -78,7 +79,8 @@ pub struct Controller {
 }
 
 impl Controller {
-    /// Production start-up: load settings (corrupt → defaults + warn log), create
+    /// Production start-up: load settings (invalid fields reset + warn log, corrupt
+    /// file backed up → defaults + warn log), create
     /// app-data dir, open store at `db_path`, purge expired trash, load lists.
     pub fn new(
         settings_path: PathBuf,
@@ -86,13 +88,15 @@ impl Controller {
         platform: Box<dyn Platform>,
     ) -> anyhow::Result<Self> {
         ensure_parent_dirs(&[&settings_path, &db_path])?;
-        let (settings, load_error) = match config::load_settings(&settings_path) {
-            Ok(settings) => (settings, None),
-            Err(error) => (Settings::default(), Some(error)),
-        };
+        let (settings, invalid_fields, load_error) = config::load_settings_lenient(&settings_path);
         let store = Store::open(&db_path)?;
         let mut controller = Self::assemble(settings, store, platform, settings_path, db_path);
         let lang = controller.state.lang;
+        if !invalid_fields.is_empty() {
+            let fields = invalid_fields.join(", ");
+            let text = tf(lang, "app.settings_fields_reset", &[("fields", &fields)]);
+            controller.log(LogLevel::Warn, &text);
+        }
         if let Some(error) = load_error {
             let text = tf(
                 lang,

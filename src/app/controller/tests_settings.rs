@@ -281,3 +281,149 @@ fn open_archive_folder_creates_the_missing_root_first() {
     assert!(root.is_dir());
     assert_eq!(h.probe.calls_with("open:").len(), 1);
 }
+
+#[test]
+fn invalid_settings_field_is_reset_and_named_while_valid_fields_survive() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let settings_path = dir.path().join("settings.json");
+    std::fs::write(
+        &settings_path,
+        r#"{"auto_print": true, "language": "fr", "poll_interval_secs": 30}"#,
+    )
+    .expect("write");
+    let (platform, _probe) = FakePlatform::boxed(Vec::new(), false);
+    let controller = Controller::new(settings_path, dir.path().join("myfax.db"), platform)
+        .expect("start-up succeeds");
+    assert!(controller.state.settings.auto_print, "valid field kept");
+    assert_eq!(controller.state.settings.poll_interval_secs, 30);
+    assert_eq!(controller.state.settings.language, Lang::default());
+    let named = controller
+        .store
+        .recent_logs(50)
+        .expect("logs")
+        .iter()
+        .any(|entry| {
+            entry.message
+                == tf(
+                    Lang::ZhTw,
+                    "app.settings_fields_reset",
+                    &[("fields", "language")],
+                )
+        });
+    assert!(named, "warning names the reset field");
+}
+
+#[test]
+fn corrupt_settings_file_is_backed_up_before_start_up_falls_back() {
+    let dir = tempfile::tempdir().expect("temp dir");
+    let settings_path = dir.path().join("settings.json");
+    std::fs::write(&settings_path, "{not json").expect("write");
+    let (platform, _probe) = FakePlatform::boxed(Vec::new(), false);
+    let _controller = Controller::new(settings_path, dir.path().join("myfax.db"), platform)
+        .expect("start-up succeeds");
+    let backups = std::fs::read_dir(dir.path())
+        .expect("dir")
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            entry
+                .file_name()
+                .to_string_lossy()
+                .starts_with("settings.json.bak-")
+        })
+        .count();
+    assert_eq!(backups, 1, "original copied to a backup");
+}
+
+/// Add `path` through the watch-folder input, as the user would.
+fn add_watch(h: &mut Harness, path: &str) {
+    h.controller
+        .set_field(Field::WatchFolderInput, path.to_owned());
+    h.controller.update(Msg::AddWatchFolder);
+}
+
+#[test]
+fn watch_folder_must_be_absolute_and_outside_archive_and_copy_folder() {
+    let mut h = Harness::new();
+    let archive = h.path("archive");
+    std::fs::create_dir_all(archive.join("sub")).expect("mkdir");
+    let forward = h.path("copies");
+    std::fs::create_dir_all(&forward).expect("mkdir");
+
+    add_watch(&mut h, "inbox");
+    assert_eq!(h.toast_text(), zh("app.watch_relative"));
+
+    add_watch(&mut h, &archive.join("sub").display().to_string());
+    assert_eq!(h.toast_text(), zh("app.watch_inside_archive"));
+
+    add_watch(&mut h, &archive.display().to_string());
+    assert_eq!(h.toast_text(), zh("app.watch_inside_archive"));
+
+    let dotted = archive.join("..").join("archive").join("sub");
+    add_watch(&mut h, &dotted.display().to_string());
+    assert_eq!(
+        h.toast_text(),
+        zh("app.watch_inside_archive"),
+        "'..' is resolved"
+    );
+
+    h.controller.state.settings.forward_copy_folder = Some(forward.clone());
+    add_watch(&mut h, &forward.display().to_string());
+    assert_eq!(h.toast_text(), zh("app.watch_is_forward"));
+
+    assert!(
+        h.controller.state.settings.watch_folders.is_empty(),
+        "rejected folders are never added"
+    );
+}
+
+#[test]
+fn save_settings_rejects_an_archive_or_copy_folder_that_holds_a_watch_folder() {
+    let mut h = Harness::new();
+    let inbox = h.path("inbox");
+    std::fs::create_dir_all(&inbox).expect("mkdir");
+    add_watch(&mut h, &inbox.display().to_string());
+    assert_eq!(h.controller.state.settings.watch_folders.len(), 1);
+
+    h.controller
+        .set_field(Field::ArchiveRoot, inbox.display().to_string());
+    h.controller.update(Msg::SaveSettings);
+    assert_eq!(
+        h.toast_text(),
+        tf(
+            Lang::ZhTw,
+            "app.settings_invalid",
+            &[("reason", zh("app.watch_inside_archive"))]
+        )
+    );
+    assert_ne!(h.controller.state.settings.archive_root, inbox);
+
+    h.controller
+        .set_field(Field::ArchiveRoot, h.path("archive").display().to_string());
+    h.controller
+        .set_field(Field::ForwardFolder, inbox.display().to_string());
+    h.controller.update(Msg::SaveSettings);
+    assert_eq!(
+        h.toast_text(),
+        tf(
+            Lang::ZhTw,
+            "app.settings_invalid",
+            &[("reason", zh("app.watch_is_forward"))]
+        )
+    );
+    assert!(h.controller.state.settings.forward_copy_folder.is_none());
+}
+
+#[test]
+fn copy_folder_inside_the_archive_root_is_allowed() {
+    let mut h = Harness::new();
+    let copies = h.path("archive/copies");
+    std::fs::create_dir_all(&copies).expect("mkdir");
+    h.controller
+        .set_field(Field::ForwardFolder, copies.display().to_string());
+    h.controller.update(Msg::SaveSettings);
+    assert_eq!(h.toast_text(), zh("app.settings_saved"));
+    assert_eq!(
+        h.controller.state.settings.forward_copy_folder,
+        Some(copies)
+    );
+}

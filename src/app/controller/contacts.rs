@@ -6,10 +6,12 @@ use crate::app::state::ToastKind;
 use crate::i18n::{t, tf};
 use crate::model::{Contact, ContactId, LogLevel, normalize_number};
 use crate::store::csv;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// File name used when the CSV export target is a folder.
 const CONTACTS_EXPORT_FILE: &str = "contacts.csv";
+/// Numbered export names tried before giving up (`contacts (n).csv`).
+const MAX_EXPORT_ATTEMPTS: u32 = 1000;
 
 /// The six editor fields, in editor order.
 const CONTACT_FIELDS: [Field; 6] = [
@@ -186,18 +188,35 @@ impl Controller {
                 return;
             }
         };
+        let Some(mut known) = self.or_report(self.store.list_contacts("")) else {
+            return;
+        };
         let mut count = 0u64;
+        let mut skipped = 0u64;
         for contact in contacts {
-            if !self.import_csv_contact(contact) {
+            if known
+                .iter()
+                .any(|existing| is_same_contact(existing, &contact))
+            {
+                skipped += 1;
+                continue;
+            }
+            if !self.import_csv_contact(contact.clone()) {
                 self.refresh_all();
                 return;
             }
+            known.push(contact);
             count += 1;
         }
         let count = count.to_string();
+        let skipped = skipped.to_string();
         self.toast(
             ToastKind::Success,
-            tf(lang, "app.csv_imported", &[("count", &count)]),
+            tf(
+                lang,
+                "app.csv_imported",
+                &[("count", &count), ("skipped", &skipped)],
+            ),
         );
         self.log(
             LogLevel::Info,
@@ -206,7 +225,8 @@ impl Controller {
         self.refresh_all();
     }
 
-    /// Write every contact to the CSV path (a folder gets `contacts.csv` inside).
+    /// Write every contact to the CSV path. A folder gets `contacts.csv` (or the next
+    /// free `contacts (n).csv`); an existing file is never overwritten.
     pub(super) fn export_contacts_csv(&mut self) {
         let lang = self.state.lang;
         let text = self.state.field(Field::CsvPath).trim().to_owned();
@@ -214,18 +234,28 @@ impl Controller {
             self.report_error(t(lang, "app.csv_no_path").to_owned());
             return;
         }
-        let mut path = PathBuf::from(text);
-        if path.is_dir() {
-            path.push(CONTACTS_EXPORT_FILE);
-        }
+        let target = PathBuf::from(text);
         let Some(contacts) = self.or_report(self.store.list_contacts("")) else {
             return;
         };
-        if let Err(error) = csv::write_file(&path, &contacts) {
-            let text = tf(lang, "app.csv_error", &[("error", &format!("{error:#}"))]);
-            self.report_error(text);
-            return;
-        }
+        let outcome = if target.is_dir() {
+            write_into_folder(&target, &contacts)
+        } else {
+            csv::write_file(&target, &contacts).map(|()| target.clone())
+        };
+        let path = match outcome {
+            Ok(path) => path,
+            Err(error) if is_already_exists(&error) => {
+                let shown = target.display().to_string();
+                self.report_error(tf(lang, "app.csv_export_exists", &[("path", &shown)]));
+                return;
+            }
+            Err(error) => {
+                let text = tf(lang, "app.csv_error", &[("error", &format!("{error:#}"))]);
+                self.report_error(text);
+                return;
+            }
+        };
         let count = contacts.len().to_string();
         let shown = path.display().to_string();
         self.toast(
@@ -240,5 +270,47 @@ impl Controller {
             LogLevel::Info,
             &tf(lang, "app.log_csv_exported", &[("count", &count)]),
         );
+    }
+}
+
+/// A CSV row duplicates a stored contact when the trimmed, case-insensitive name and
+/// the normalised fax number match (two empty numbers count as the same).
+fn is_same_contact(existing: &Contact, row: &Contact) -> bool {
+    existing.name.trim().to_lowercase() == row.name.trim().to_lowercase()
+        && number_key(&existing.fax_number) == number_key(&row.fax_number)
+}
+
+fn number_key(fax: &str) -> String {
+    normalize_number(fax).unwrap_or_default()
+}
+
+fn is_already_exists(error: &anyhow::Error) -> bool {
+    error
+        .downcast_ref::<std::io::Error>()
+        .is_some_and(|io| io.kind() == std::io::ErrorKind::AlreadyExists)
+}
+
+/// Write into `folder` under the first name that is still free.
+fn write_into_folder(folder: &Path, contacts: &[Contact]) -> anyhow::Result<PathBuf> {
+    for index in 1..=MAX_EXPORT_ATTEMPTS {
+        let path = folder.join(numbered_export_name(index));
+        match csv::write_file(&path, contacts) {
+            Ok(()) => return Ok(path),
+            Err(error) if is_already_exists(&error) => continue,
+            Err(error) => return Err(error),
+        }
+    }
+    Err(anyhow::anyhow!(
+        "no free export file name in {}",
+        folder.display()
+    ))
+}
+
+/// `contacts.csv`, then `contacts (2).csv`, `contacts (3).csv`, ...
+fn numbered_export_name(index: u32) -> String {
+    if index == 1 {
+        CONTACTS_EXPORT_FILE.to_owned()
+    } else {
+        format!("contacts ({index}).csv")
     }
 }

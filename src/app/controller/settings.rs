@@ -1,13 +1,14 @@
 //! Settings page: language, theme, watch folders, toggles, text-field settings.
 
 use super::Controller;
+use super::folders::is_same_or_inside;
 use crate::app::msg::{BoolSetting, Field};
 use crate::app::state::ToastKind;
 use crate::config::{self, Settings, ThemeChoice};
 use crate::i18n::{Lang, t, tf};
 use crate::model::LogLevel;
 use std::ops::RangeInclusive;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
 /// Seconds between folder polls.
@@ -24,6 +25,8 @@ enum SettingsIssue {
     Poll,
     Trash,
     Page,
+    WatchInsideArchive,
+    WatchIsForward,
 }
 
 /// Parse `text` (trimmed) and accept it only inside `range`.
@@ -44,7 +47,27 @@ fn issue_text(lang: Lang, issue: SettingsIssue) -> &'static str {
         SettingsIssue::Poll => t(lang, "app.settings_invalid_poll"),
         SettingsIssue::Trash => t(lang, "app.settings_invalid_trash"),
         SettingsIssue::Page => t(lang, "app.settings_invalid_page"),
+        SettingsIssue::WatchInsideArchive => t(lang, "app.watch_inside_archive"),
+        SettingsIssue::WatchIsForward => t(lang, "app.watch_is_forward"),
     }
+}
+
+/// The watch-folder rule a folder breaks under `settings`, if any: a watch folder may
+/// not be the archive root or inside it, nor the copy folder or inside it.
+fn watch_conflict(settings: &Settings, folder: &Path) -> Option<SettingsIssue> {
+    if is_same_or_inside(folder, &settings.archive_root) {
+        return Some(SettingsIssue::WatchInsideArchive);
+    }
+    let forward = settings.forward_copy_folder.as_deref()?;
+    is_same_or_inside(folder, forward).then_some(SettingsIssue::WatchIsForward)
+}
+
+/// First conflict between any watch folder and the archive / copy folder of `settings`.
+fn settings_conflict(settings: &Settings) -> Option<SettingsIssue> {
+    settings
+        .watch_folders
+        .iter()
+        .find_map(|folder| watch_conflict(settings, folder))
 }
 
 impl Controller {
@@ -118,7 +141,17 @@ impl Controller {
             BoolSetting::NotifyNewFax => &mut next.notify_new_fax,
         };
         *flag = !*flag;
+        // The watcher thread keeps the settings it was spawned with; these two are
+        // read there, so it must be restarted. AutoPrint / NotifyNewFax are read by
+        // the controller itself and take effect immediately.
+        let read_by_watcher = matches!(
+            setting,
+            BoolSetting::DeleteSourceAfterImport | BoolSetting::AcceptTiff
+        );
         self.commit_settings(next);
+        if read_by_watcher {
+            self.restart_watcher_from_state();
+        }
     }
 
     /// Add a watch folder (must exist and not already be listed), then restart the watcher.
@@ -130,12 +163,20 @@ impl Controller {
             return;
         }
         let path = PathBuf::from(&text);
+        if !path.is_absolute() {
+            self.report_error(t(lang, "app.watch_relative").to_owned());
+            return;
+        }
         if !path.is_dir() {
             self.report_error(tf(lang, "app.watch_missing", &[("path", &text)]));
             return;
         }
         if self.state.settings.watch_folders.contains(&path) {
             self.toast(ToastKind::Info, t(lang, "app.watch_duplicate").to_owned());
+            return;
+        }
+        if let Some(issue) = watch_conflict(&self.state.settings, &path) {
+            self.report_error(issue_text(lang, issue).to_owned());
             return;
         }
         let mut next = self.state.settings.clone();
@@ -194,7 +235,10 @@ impl Controller {
         next.trash_retention_days = trash;
         next.page_size = page;
         next.forward_copy_folder = (!forward.is_empty()).then(|| PathBuf::from(forward));
-        Ok(next)
+        match settings_conflict(&next) {
+            Some(issue) => Err(issue),
+            None => Ok(next),
+        }
     }
 
     /// Validate and persist the text-field settings.

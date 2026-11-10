@@ -15,8 +15,13 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     ),
     (
         "app.export_done",
-        "已匯出 {count} 份傳真到 {folder}",
-        "Exported {count} fax(es) to {folder}",
+        "已匯出 {count} 份傳真到 {folder}，失敗 {failed} 份",
+        "Exported {count} fax(es) to {folder}, {failed} failed",
+    ),
+    (
+        "app.export_file_failed",
+        "無法匯出 {name}：{error}",
+        "Could not export {name}: {error}",
     ),
     (
         "app.export_none",
@@ -128,6 +133,31 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
         "這個資料夾已在清單中",
         "This folder is already in the list",
     ),
+    (
+        "app.watch_relative",
+        "監看資料夾必須使用完整路徑",
+        "The watch folder must be a full path",
+    ),
+    (
+        "app.watch_inside_archive",
+        "監看資料夾不可位於封存位置之內",
+        "A watch folder can't be inside the archive folder",
+    ),
+    (
+        "app.watch_is_forward",
+        "監看資料夾不可與副本資料夾相同或位於其內",
+        "A watch folder can't be the copy folder or inside it",
+    ),
+    (
+        "app.settings_fields_reset",
+        "設定檔中以下欄位無效，已改用預設值：{fields}",
+        "These settings fields were invalid and reset to defaults: {fields}",
+    ),
+    (
+        "app.purge_skipped_offline",
+        "封存位置目前無法存取，已略過垃圾桶清理",
+        "The archive folder is unavailable; trash cleanup skipped",
+    ),
     ("app.contact_saved", "已儲存聯絡人", "Contact saved"),
     ("app.contact_deleted", "已刪除聯絡人", "Contact deleted"),
     ("app.contact_invalid_name", "請輸入姓名", "Enter a name"),
@@ -148,8 +178,13 @@ pub const ENTRIES: &[(&str, &str, &str)] = &[
     ),
     (
         "app.csv_imported",
-        "已匯入 {count} 位聯絡人",
-        "Imported {count} contact(s)",
+        "已匯入 {count} 位聯絡人，略過 {skipped} 位重複聯絡人",
+        "Imported {count} contact(s), skipped {skipped} duplicate(s)",
+    ),
+    (
+        "app.csv_export_exists",
+        "匯出檔已存在，未覆寫：{path}",
+        "The export file already exists and was not overwritten: {path}",
     ),
     (
         "app.csv_exported",

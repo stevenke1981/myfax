@@ -289,6 +289,7 @@ fn expired_trash_is_purged_when_the_controller_starts() {
 
     let settings = Settings {
         trash_retention_days: 30,
+        archive_root: archive.path().to_path_buf(),
         ..Settings::default()
     };
     let h = Harness::with_store(settings, store, archive.path().join("myfax.db"));
@@ -306,4 +307,93 @@ fn unreadable_fax_is_still_archived_with_zero_pages() {
     assert_eq!(h.controller.state.counts.all, 1);
     assert_eq!(h.fax(h.id_of(name)).pages, 0);
     assert_eq!(h.toast().map(|t| t.0), Some(ToastKind::Success));
+}
+
+#[test]
+fn export_counts_successes_and_failures_and_reports_both() {
+    let mut h = Harness::new();
+    let first = first_name();
+    let second = fax_name(2026, 3, 5, 15, 7, "0912345679");
+    h.import_fax(&first, 1);
+    h.import_fax(&second, 1);
+    let broken = h.fax(h.id_of(&second)).file_path;
+    std::fs::remove_file(&broken).expect("archived file removed");
+
+    let export = h.path("exported");
+    h.controller
+        .set_field(Field::ExportFolder, export.display().to_string());
+    h.controller.update(Msg::ExportFiltered);
+
+    assert_eq!(h.toast().map(|(kind, _)| kind), Some(ToastKind::Error));
+    assert_eq!(
+        h.toast_text(),
+        tf(
+            Lang::ZhTw,
+            "app.export_done",
+            &[
+                ("count", "1"),
+                ("folder", &export.display().to_string()),
+                ("failed", "1"),
+            ]
+        )
+    );
+    let archived_name = broken
+        .file_name()
+        .expect("file name")
+        .to_string_lossy()
+        .into_owned();
+    assert!(
+        h.log_messages()
+            .iter()
+            .any(|line| line.contains(&archived_name) && line.contains("無法匯出")),
+        "each failed file is logged by name"
+    );
+}
+
+#[test]
+fn startup_purge_keeps_index_rows_while_the_archive_is_offline() {
+    let mut h = Harness::new();
+    let name = first_name();
+    h.import_fax(&name, 1);
+    let id = h.id_of(&name);
+    h.controller
+        .store
+        .move_to_trash(id, Local::now() - TimeDelta::days(90))
+        .expect("trashed long ago");
+    // Simulate an unmounted archive drive: the whole archive root is unreachable.
+    std::fs::remove_dir_all(h.path("archive")).expect("archive offline");
+
+    h.controller.purge_expired_trash();
+
+    assert!(
+        h.controller.store.get_fax(id).expect("store").is_some(),
+        "index row survives while the archive is offline"
+    );
+    assert!(
+        h.log_messages()
+            .iter()
+            .any(|line| line == zh("app.purge_skipped_offline")),
+        "skipped purge is logged as a warning"
+    );
+}
+
+#[test]
+fn startup_purge_drops_rows_whose_file_is_gone_while_the_archive_is_online() {
+    let mut h = Harness::new();
+    let name = first_name();
+    h.import_fax(&name, 1);
+    let id = h.id_of(&name);
+    let path = h.fax(id).file_path;
+    h.controller
+        .store
+        .move_to_trash(id, Local::now() - TimeDelta::days(90))
+        .expect("trashed long ago");
+    std::fs::remove_file(&path).expect("file removed while archive is online");
+
+    h.controller.purge_expired_trash();
+
+    assert!(
+        h.controller.store.get_fax(id).expect("store").is_none(),
+        "a missing file with a reachable archive counts as purged"
+    );
 }

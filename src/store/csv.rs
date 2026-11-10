@@ -53,9 +53,15 @@ pub fn read_file(path: &Path) -> anyhow::Result<Vec<Contact>> {
     parse_contacts(text.trim_start_matches('\u{feff}'))
 }
 
-/// Writes with a UTF-8 BOM so Excel opens Chinese text correctly.
+/// Writes with a UTF-8 BOM so Excel opens Chinese text correctly. Never overwrites:
+/// an existing `path` fails with `ErrorKind::AlreadyExists` (wrapped in the error).
 pub fn write_file(path: &Path, contacts: &[Contact]) -> anyhow::Result<()> {
-    std::fs::write(path, format!("\u{feff}{}", write_contacts(contacts)))?;
+    use std::io::Write;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)?;
+    file.write_all(format!("\u{feff}{}", write_contacts(contacts)).as_bytes())?;
     Ok(())
 }
 

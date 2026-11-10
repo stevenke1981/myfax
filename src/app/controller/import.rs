@@ -170,19 +170,24 @@ impl Controller {
             return;
         }
         let mut copied = 0u64;
-        let mut failure: Option<String> = None;
+        let mut failed = 0u64;
         for record in &records {
             match copy_into_dir(&record.file_path, &folder) {
                 Ok(_) => copied += 1,
-                Err(error) => failure = Some(error.to_string()),
+                Err(error) => {
+                    failed += 1;
+                    let name = file_label(&record.file_path);
+                    let text = tf(
+                        lang,
+                        "app.export_file_failed",
+                        &[("name", &name), ("error", &error.to_string())],
+                    );
+                    self.log(LogLevel::Error, &text);
+                }
             }
         }
-        if let Some(error) = failure {
-            let text = tf(lang, "app.export_error", &[("error", &error)]);
-            self.report_error(text);
-            return;
-        }
         let count = copied.to_string();
+        let failed = failed.to_string();
         let shown = folder.display().to_string();
         self.log(
             LogLevel::Info,
@@ -192,12 +197,17 @@ impl Controller {
                 &[("count", &count), ("folder", &shown)],
             ),
         );
+        let kind = if failed == "0" {
+            ToastKind::Success
+        } else {
+            ToastKind::Error
+        };
         self.toast(
-            ToastKind::Success,
+            kind,
             tf(
                 lang,
                 "app.export_done",
-                &[("count", &count), ("folder", &shown)],
+                &[("count", &count), ("folder", &shown), ("failed", &failed)],
             ),
         );
     }

@@ -27,6 +27,18 @@ pub(super) fn remove_file_if_exists(path: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Delete an archived file during trash cleanup. A missing file counts as deleted
+/// only while the archive root is reachable; otherwise it may sit on an offline drive.
+fn remove_archived_file(path: &Path, archive_root: &Path) -> std::io::Result<()> {
+    match std::fs::remove_file(path) {
+        Ok(()) => Ok(()),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && archive_root.is_dir() => {
+            Ok(())
+        }
+        Err(error) => Err(error),
+    }
+}
+
 impl Controller {
     /// Fetch one record. A store error is reported; a missing record gives `None`.
     pub(super) fn load_fax(&mut self, id: FaxId) -> Option<FaxRecord> {
@@ -371,9 +383,18 @@ impl Controller {
         let Some(expired) = self.or_report(self.store.trashed_before(cutoff)) else {
             return;
         };
+        if expired.is_empty() {
+            return;
+        }
+        let archive_root = self.state.settings.archive_root.clone();
+        if !archive_root.is_dir() {
+            // Dropping index rows now would orphan files on an offline drive.
+            self.log(LogLevel::Warn, t(lang, "app.purge_skipped_offline"));
+            return;
+        }
         let mut purged = 0u64;
         for record in expired {
-            if let Err(error) = remove_file_if_exists(&record.file_path) {
+            if let Err(error) = remove_archived_file(&record.file_path, &archive_root) {
                 let text = tf(
                     lang,
                     "app.file_delete_failed",

@@ -243,7 +243,15 @@ pub(super) fn zh(key: &'static str) -> &'static str {
 /// therefore its SHA-256) unique so repeated imports are not treated as duplicates.
 pub(super) fn fax_pdf(pages: u32, tag: &str) -> Vec<u8> {
     let mut bytes = crate::archive::ingest::testutil::pdf_bytes(pages);
-    bytes.extend_from_slice(format!("\n% {tag}\n").as_bytes());
+    // Encode the tag as trailing whitespace (one space/tab per bit) so the file
+    // still ends with `%%EOF` plus whitespace — what the watcher treats as complete.
+    bytes.push(b'\n');
+    for byte in tag.bytes() {
+        for bit in 0..8 {
+            bytes.push(if byte >> bit & 1 == 1 { b'\t' } else { b' ' });
+        }
+    }
+    bytes.push(b'\n');
     bytes
 }
 
