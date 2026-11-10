@@ -1,3 +1,57 @@
-//! i18n fragment `detail` — rows are (key, zh-TW, en). Owner: see docs/team/myfax/BRIEF.md.
+//! i18n fragment `detail` — rows are (key, zh-TW, en). Owner: views worker (UI_SPEC §11.4).
 
-pub const ENTRIES: &[(&str, &str, &str)] = &[];
+pub const ENTRIES: &[(&str, &str, &str)] = &[
+    ("detail.empty_title", "選擇一份傳真", "Select a fax"),
+    (
+        "detail.empty_hint",
+        "從清單點選傳真即可在這裡檢視內容。",
+        "Pick a fax from the list to see it here.",
+    ),
+    ("detail.title", "傳真內容", "Fax details"),
+    ("detail.field_received", "接收時間", "Received"),
+    ("detail.field_number", "傳真號碼", "Number"),
+    ("detail.field_pages", "頁數", "Pages"),
+    ("detail.field_size", "檔案大小", "Size"),
+    ("detail.field_original", "原始檔名", "Original file"),
+    ("detail.field_path", "封存位置", "Archived at"),
+    (
+        "detail.in_trash",
+        "已於 {time} 移到垃圾桶",
+        "Moved to trash at {time}",
+    ),
+    ("detail.mark_read", "標為已讀", "Mark as read"),
+    ("detail.mark_unread", "標為未讀", "Mark as unread"),
+    ("detail.star", "加星號", "Star"),
+    ("detail.unstar", "取消星號", "Unstar"),
+    ("detail.open", "開啟", "Open"),
+    ("detail.print", "列印", "Print"),
+    ("detail.reveal", "在資料夾中顯示", "Show in folder"),
+    ("detail.add_contact", "加入聯絡人", "Add to contacts"),
+    ("detail.in_contacts", "已在聯絡人中", "Already in contacts"),
+    ("detail.trash", "移到垃圾桶", "Move to trash"),
+    ("detail.restore", "還原", "Restore"),
+    ("detail.delete_forever", "永久刪除", "Delete permanently"),
+    ("detail.section_edit", "編輯資訊", "Edit details"),
+    ("detail.label_sender", "寄件者名稱", "Sender name"),
+    ("detail.label_tags", "標籤", "Tags"),
+    (
+        "detail.tags_hint",
+        "以逗號分隔多個標籤",
+        "Separate tags with commas",
+    ),
+    ("detail.label_note", "備註", "Note"),
+    ("detail.save_edits", "儲存變更", "Save changes"),
+    ("detail.section_preview", "預覽", "Preview"),
+    ("detail.zoom_fit", "符合寬度", "Fit"),
+    ("detail.zoom_percent", "{percent}%", "{percent}%"),
+    (
+        "detail.preview_loading",
+        "正在產生預覽…",
+        "Rendering preview...",
+    ),
+    (
+        "detail.preview_unavailable_hint",
+        "無法在此預覽，仍可用預設程式開啟。",
+        "Can't preview here, but you can still open it with the default app.",
+    ),
+];
